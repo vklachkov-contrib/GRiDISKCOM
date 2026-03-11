@@ -19,11 +19,19 @@
 #include <ccos_image/ccos_image.h>
 #include <ccos_image/ccos_private.h>
 
+#include <backport/optional.hpp>
+#include <backport/unique_ptr.hpp>
+#include <backport/shared_ptr.hpp>
+
 #include <algorithm>
 #include <array>
 #include <memory>
 #include <optional>
 #include <vector>
+
+#define optional tl::optional
+#define nullopt  tl::nullopt
+#define nullptr  NULL
 
 struct MbrPartition {
     size_t   index;
@@ -42,8 +50,8 @@ struct DiskPanel {
     bool in_subdir = false;
 
     bool hdd_mode = false;
-    std::shared_ptr<std::vector<uint8_t>> hdd_data;
-    std::optional<int> hdd_partition;
+    shared_ptr<std::vector<uint8_t>> hdd_data;
+    optional<int> hdd_partition;
 
     ~DiskPanel() {
         if (!hdd_data && disk.data != nullptr)
@@ -93,10 +101,10 @@ public slots:
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
-    std::array<std::optional<DiskPanel>, 2> panels;
+    std::array<optional<DiskPanel>, 2> panels;
     int active_panel = 0;
 private:
-    std::unique_ptr<Ui::MainWindow> ui;
+    unique_ptr<Ui::MainWindow> ui;
 
     bool isFileAlreadyOpened(const QString& path);
     void handleAlreadyOpenedImg(QString path);

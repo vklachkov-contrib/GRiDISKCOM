@@ -430,9 +430,10 @@ int saveBox(QString disk, QWidget* parent){
     int ret = msgBox.exec();
     return ret == QMessageBox::Save ? 1 : ret == QMessageBox::Discard ? -1 : 0;
 }
+
 //[Service functions]
 
-MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(std::make_unique<Ui::MainWindow>()){
+MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(new Ui::MainWindow()) {
     ui->setupUi(this);
 
     // FIXME: How to enable trace in new version of ccos-disk-utils?
@@ -1179,7 +1180,7 @@ bool MainWindow::suggestSelectAnotherPartition() {
     return msgBox.exec() == QMessageBox::Yes;
 }
 
-static std::optional<ccos_disk_t> tryOpenAs(
+static optional<ccos_disk_t> tryOpenAs(
     uint8_t* data, size_t size, uint16_t sector_size, uint16_t superblock_fid, uint16_t bitmap_fid
 ) {
     ccos_disk_t disk = { sector_size, superblock_fid, bitmap_fid, size, data };
@@ -1203,28 +1204,28 @@ static std::optional<ccos_disk_t> tryOpenAs(
     *(uint16_t*)&data[CCOS_BITMASK_ADDR_OFFSET] = zero_sector_bitmap;
     
     if (root == nullptr) {
-        return std::nullopt;
+        return nullopt;
     } else {
-        return std::optional<ccos_disk_t>(disk);
+        return optional<ccos_disk_t>(disk);
     }
 }
 
-static std::optional<ccos_disk_t> tryFromBootsector(uint8_t* data, size_t size) {
+static optional<ccos_disk_t> tryFromBootsector(uint8_t* data, size_t size) {
     if (size < 512) {
-        return std::nullopt;
+        return nullopt;
     }
 
     uint16_t superblock = *(uint16_t*)&data[CCOS_SUPERBLOCK_ADDR_OFFSET];
     uint16_t bitmap = *(uint16_t*)&data[CCOS_BITMASK_ADDR_OFFSET];
 
     if (superblock == 0 || bitmap == 0) {
-        return std::nullopt;
+        return nullopt;
     }
 
     return tryOpenAs(data, size, 512, superblock, bitmap);
 }
 
-static std::optional<ccos_disk_t> tryDetectBySize(uint8_t* data, size_t size) {
+static optional<ccos_disk_t> tryDetectBySize(uint8_t* data, size_t size) {
     if (size == 384 * 1024) {
         return tryOpenAs(data, size,
             GRID_BUBBLE_SECTOR_SIZE, GRID_BUBBLE_SUPERBLOCK_FID, GRID_BUBBLE_BITMAP_FID);
@@ -1239,7 +1240,7 @@ static std::optional<ccos_disk_t> tryDetectBySize(uint8_t* data, size_t size) {
             GRID_HDD_SECTOR_SIZE, GRID_HDD_SUPERBLOCK_FID, GRID_HDD_BITMAP_FID);
     }
 
-    return std::nullopt;
+    return nullopt;
 }
 
 void MainWindow::openValidNonMbrDisk(QString path, ccos_disk_t disk) {
@@ -1261,8 +1262,8 @@ static bool isMbrDisk(const uint8_t* data, size_t size) {
     return size > 0x200 && data[0x1FE] == 0x55 && data[0x1FF] == 0xAA;
 }
 
-static std::optional<ccos_disk_t> tryOpenMbrPartition(uint8_t* data, MbrPartition& partition) {
-    std::optional<ccos_disk_t> disk = tryFromBootsector(data + partition.offset, partition.size);
+static optional<ccos_disk_t> tryOpenMbrPartition(uint8_t* data, MbrPartition& partition) {
+    optional<ccos_disk_t> disk = tryFromBootsector(data + partition.offset, partition.size);
     if (disk) {
         return disk;
     }
@@ -1311,7 +1312,7 @@ void MainWindow::tryToOpenValidMbrDisk(QString path, uint8_t* data, size_t size)
 
         int selected = dlg.getIndex();
 
-        std::optional<ccos_disk_t> disk = tryOpenMbrPartition(hdd_data.data(), parts[selected]);
+        optional<ccos_disk_t> disk = tryOpenMbrPartition(hdd_data.data(), parts[selected]);
         if (disk) {
             openValidMbrPartition(path, std::move(hdd_data), selected, *disk);
             break;
@@ -1333,7 +1334,7 @@ void MainWindow::openValidMbrPartition(QString path, std::vector<uint8_t> hdd_da
     panel.disk = disk;
     panel.current_dir = root;
     panel.hdd_mode = true;
-    panel.hdd_data = std::make_shared<std::vector<uint8_t>>(std::move(hdd_data));
+    panel.hdd_data = shared_ptr<std::vector<uint8_t>>(new std::vector<uint8_t>(std::move(hdd_data)));
     panel.hdd_partition = partition_index;
 
     fillTable(active_panel, root, false);
@@ -1364,7 +1365,7 @@ void MainWindow::loadCustomImg(QString path, uint8_t* data, size_t size) {
         cdlg.GetParams(&sector_size, &superblock, nullptr, nullptr);
 
         // TODO: Allow to select bitmask.
-        std::optional<ccos_disk_t> disk = tryOpenAs(data, size, sector_size, superblock, superblock-1);
+        optional<ccos_disk_t> disk = tryOpenAs(data, size, sector_size, superblock, superblock-1);
         if (disk) {
             openValidNonMbrDisk(path, *disk);
         }
@@ -1394,7 +1395,7 @@ void MainWindow::LoadImg(QString path) {
         return;
     }
 
-    std::optional<ccos_disk_t> disk = tryFromBootsector(data, size);
+    optional<ccos_disk_t> disk = tryFromBootsector(data, size);
     if (disk) {
         openValidNonMbrDisk(path, *disk);
         return;
