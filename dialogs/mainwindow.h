@@ -17,7 +17,6 @@
 #include <ccos_image/ccos_disk.h>
 #include <ccos_image/ccos_format.h>
 #include <ccos_image/ccos_image.h>
-#include <ccos_image/ccos_private.h>
 
 #include <array>
 #include <memory>
@@ -35,7 +34,7 @@ struct MbrPartition {
 
 struct DiskPanel {
     QString path;
-    ccos_disk_t disk = {};
+    ccos_disk_t* disk = nullptr;
     ccos_inode_t* current_dir = nullptr;
     std::vector<ccos_inode_t*> inodes;
     bool modified = false;
@@ -46,8 +45,15 @@ struct DiskPanel {
     std::optional<int> hdd_partition;
 
     ~DiskPanel() {
-        if (!hdd_data && disk.data != nullptr)
-            free(disk.data);
+        if (disk == nullptr)
+            return;
+        if (hdd_mode) {
+            // The image data is shared with hdd_data (an offset into the HDD
+            // buffer), so only release the opaque disk handle and keep the data.
+            free(disk);
+        } else {
+            ccos_disk_free(disk);
+        }
     }
 };
 
@@ -101,9 +107,9 @@ private:
     bool isFileAlreadyOpened(const QString& path);
     void handleAlreadyOpenedImg(QString path);
     bool suggestSelectAnotherPartition();
-    void openValidNonMbrDisk(QString path, ccos_disk_t disk);
+    void openValidNonMbrDisk(QString path, ccos_disk_t* disk);
     void tryToOpenValidMbrDisk(QString path, uint8_t* data, size_t size);
-    void openValidMbrPartition(QString path, std::vector<uint8_t> hdddata, int partition_index, ccos_disk_t disk);
+    void openValidMbrPartition(QString path, std::vector<uint8_t> hdddata, int partition_index, ccos_disk_t* disk);
     void loadCustomImg(QString path, uint8_t* data, size_t size);
 
     void fillTable(int panel_idx, ccos_inode_t* directory, bool noRoot);
