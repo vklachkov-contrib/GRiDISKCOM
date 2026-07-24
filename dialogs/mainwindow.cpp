@@ -24,6 +24,8 @@
 
 //[Service functions]
 
+static ccos_disk_t* tryOpenMbrPartition(uint8_t* data, MbrPartition& partition);
+
 ccos_date_t ccos_get_datetime(void) {
   timespec tp;
   clock_gettime(CLOCK_REALTIME, &tp);
@@ -726,11 +728,7 @@ void MainWindow::AnotherPart(bool fromMenu){
 
     auto& dst = *panels[topan];
 
-    uint8_t* part_data = src.hdd_data->data() + parts[selctd].offset;
-    ccos_disk_t* new_disk = (ccos_disk_sector_size(src.disk) == GRID_BUBBLE_SECTOR_SIZE)
-        ? ccos_disk_new_bubble(part_data, parts[selctd].size, ccos_disk_superblock(src.disk), ccos_disk_bitmap(src.disk))
-        : ccos_disk_new_extdisk(part_data, parts[selctd].size, ccos_disk_superblock(src.disk), ccos_disk_bitmap(src.disk));
-
+    ccos_disk_t* new_disk = tryOpenMbrPartition(src.hdd_data->data(), parts[selctd]);
     ccos_inode_t* root = (new_disk != nullptr) ? ccos_get_root_dir(new_disk) : nullptr;
     if (root == nullptr){
         QMessageBox::critical(this, "Incorrect Image File",
