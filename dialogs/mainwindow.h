@@ -82,6 +82,8 @@ public slots:
     void Delete();
     void OpenDir();
     void FocusChanged(QWidget*, QWidget* now);
+    void ShowPreview(const QPoint& pos);
+    void ShowPreview();
     void HDDMenu(bool activ);
     void Extract();
     void ExtractAll();
@@ -116,5 +118,7 @@ private:
 
     void updatePanelTitle(int panel_idx);
     void refreshActivePanelUI();
+
+    void doPreview(int panel_idx, ccos_inode_t* file);
 };
 #endif // MAINWINDOW_H

@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "preview/previewdlg.h"
 
 #include <cstdio>
 #include <ctime>
@@ -483,6 +484,8 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(std::make_uniqu
         addFile(tw, 0);
         tw->verticalHeader()->hide();
         tw->setSelectionBehavior(QAbstractItemView::SelectRows);
+        tw->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(tw, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(ShowPreview(QPoint)));
     }
     QFont diskfont;
     diskfont.setFamily(QString::fromUtf8("Arial"));
@@ -548,6 +551,7 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(std::make_uniqu
     connect(ui->actionMake_dir, SIGNAL(triggered()), this, SLOT(MakeDir()));
     connect(ui->actionNewImage, SIGNAL(triggered()), this, SLOT(NewImage()));
     connect(ui->actionOpen, SIGNAL(triggered()), this, SLOT(OpenImg()));
+    connect(ui->actionPreview, SIGNAL(triggered()), this, SLOT(ShowPreview()));
     connect(ui->actionRename, SIGNAL(triggered()), this, SLOT(Rename()));
     connect(ui->actionSave, SIGNAL(triggered()), this, SLOT(Save()));
     connect(ui->actionSave_as, SIGNAL(triggered()), this, SLOT(SaveAs()));
@@ -1175,6 +1179,45 @@ void MainWindow::HDDMenu(bool enab){
     ui->actionAct_part->setEnabled(enab);
     ui->actionAno_part->setEnabled(enab);
     ui->actionSep_save->setEnabled(enab);
+}
+
+void MainWindow::doPreview(int panel_idx, ccos_inode_t* file){
+    if (!panels[panel_idx] || file == nullptr)
+        return;
+    if (ccos_is_dir(file))
+        return;
+    PreviewDlg dlg(panels[panel_idx]->disk, file, this);
+    dlg.exec();
+}
+
+void MainWindow::ShowPreview(const QPoint& pos){
+    QTableWidget* tw = qobject_cast<QTableWidget*>(sender());
+    if (tw == nullptr)
+        return;
+    int panel_idx = (tw == ui->tableWidget_2) ? 1 : 0;
+    if (!panels[panel_idx])
+        return;
+    auto& panel = *panels[panel_idx];
+
+    QTableWidgetItem* it = tw->itemAt(pos);
+    if (it == nullptr)
+        return;
+    int row = it->row();
+    if (row < 0 || row >= static_cast<int>(panel.inodes.size()))
+        return;
+    doPreview(panel_idx, panel.inodes[row]);
+}
+
+void MainWindow::ShowPreview(){
+    int panel_idx = active_panel;
+    if (!panels[panel_idx])
+        return;
+    auto& panel = *panels[panel_idx];
+    QTableWidget* tw = panel_idx ? ui->tableWidget_2 : ui->tableWidget;
+    int row = tw->currentRow();
+    if (row < 0 || row >= static_cast<int>(panel.inodes.size()))
+        return;
+    doPreview(panel_idx, panel.inodes[row]);
 }
 
 void MainWindow::Label(){
