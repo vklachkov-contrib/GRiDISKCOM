@@ -113,5 +113,8 @@ private:
     void loadCustomImg(QString path, uint8_t* data, size_t size);
 
     void fillTable(int panel_idx, ccos_inode_t* directory, bool noRoot);
+
+    void updatePanelTitle(int panel_idx);
+    void refreshActivePanelUI();
 };
 #endif // MAINWINDOW_H

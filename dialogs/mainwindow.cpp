@@ -403,6 +403,18 @@ void MainWindow::fillTable(int panel_idx, ccos_inode_t* directory, bool noRoot) 
     free(dirdata);
 }
 
+void MainWindow::updatePanelTitle(int panel_idx) {
+    if (!panels[panel_idx] || panels[panel_idx]->disk == nullptr)
+        return;
+    auto& panel = *panels[panel_idx];
+    QGroupBox* box = (panel_idx == 0) ? ui->groupBox : ui->groupBox_2;
+    QString disk_name = (panel_idx == 0) ? "I" : "II";
+    QString labd = short_string_to_qstring(ccos_get_disk_label(panel.disk));
+    box->setTitle(QString("Disk %1 - %2%3")
+                      .arg(disk_name, !labd.isEmpty() ? labd : "No label",
+                            panel.modified ? "*" : ""));
+}
+
 //*Parse Hard Disk MBR
 std::vector<MbrPartition> parseMbr(const uint8_t* data, size_t size) {
     std::vector<MbrPartition> partitions;
@@ -697,35 +709,47 @@ void MainWindow::AnotherPart(bool fromMenu){
 
     int topan = (fromMenu && dlg.isChecked()) ? !active_panel : active_panel;
 
-    if (usedisk != topan && panels[topan])
-        CloseImg();
+    if (usedisk != topan && panels[topan]) {
+        int saved_active = active_panel;
+        active_panel = topan;
+        int closed = CloseImg();
+        active_panel = saved_active;
+        if (!closed) {
+            refreshActivePanelUI();
+            return;
+        }
+    }
 
-    if (!panels[topan])
+    bool fresh_target = !panels[topan];
+    if (fresh_target)
         panels[topan].emplace();
 
     auto& dst = *panels[topan];
-    if (usedisk == topan && dst.disk != nullptr) {
-        free(dst.disk);
-        dst.disk = nullptr;
-    }
+
     uint8_t* part_data = src.hdd_data->data() + parts[selctd].offset;
-    dst.disk = (ccos_disk_sector_size(src.disk) == GRID_BUBBLE_SECTOR_SIZE)
+    ccos_disk_t* new_disk = (ccos_disk_sector_size(src.disk) == GRID_BUBBLE_SECTOR_SIZE)
         ? ccos_disk_new_bubble(part_data, parts[selctd].size, ccos_disk_superblock(src.disk), ccos_disk_bitmap(src.disk))
         : ccos_disk_new_extdisk(part_data, parts[selctd].size, ccos_disk_superblock(src.disk), ccos_disk_bitmap(src.disk));
 
-    ccos_inode_t* root = ccos_get_root_dir(dst.disk);
+    ccos_inode_t* root = (new_disk != nullptr) ? ccos_get_root_dir(new_disk) : nullptr;
     if (root == nullptr){
         QMessageBox::critical(this, "Incorrect Image File",
                                 "Image broken or have non-GRiD format!");
-        free(dst.disk);
-        dst.disk = nullptr;
-        if (usedisk == topan){
-            src.hdd_data.reset();
-            src.hdd_mode = false;
+        if (new_disk)
+            free(new_disk);
+        if (fresh_target)
+            panels[topan].reset();
+        if ((!panels[active_panel] || panels[active_panel]->disk == nullptr)
+            && panels[usedisk] && panels[usedisk]->disk != nullptr) {
+            active_panel = usedisk;
         }
-        panels[topan].reset();
+        refreshActivePanelUI();
         return;
     }
+
+    if (dst.disk != nullptr)
+        free(dst.disk);
+    dst.disk = new_disk;
     dst.hdd_mode = true;
     dst.current_dir = root;
     if (!fromMenu || dlg.isChecked()){
@@ -734,6 +758,7 @@ void MainWindow::AnotherPart(bool fromMenu){
     }
 
     fillTable(topan, root, false);
+    refreshActivePanelUI();
 }
 
 void MainWindow::closeEvent(QCloseEvent *event){
@@ -1127,21 +1152,24 @@ void MainWindow::ExtractAll(){
     }
 }
 
+void MainWindow::refreshActivePanelUI(){
+    QFont font = ui->groupBox->font();
+    font.setBold(active_panel == 0);
+    ui->groupBox->setFont(font);
+    ui->tableWidget->setFont(font);
+
+    font = ui->groupBox_2->font();
+    font.setBold(active_panel == 1);
+    ui->groupBox_2->setFont(font);
+    ui->tableWidget_2->setFont(font);
+
+    HDDMenu(panels[active_panel] && panels[active_panel]->hdd_mode);
+}
+
 void MainWindow::FocusChanged(QWidget *, QWidget *now){
     if (now == ui->tableWidget || now == ui->tableWidget_2){
         active_panel = (now == ui->tableWidget_2) ? 1 : 0;
-
-        QFont font = ui->groupBox->font();
-        font.setBold(active_panel == 0);
-        ui->groupBox->setFont(font);
-        ui->tableWidget->setFont(font);
-
-        font = ui->groupBox_2->font();
-        font.setBold(active_panel == 1);
-        ui->groupBox_2->setFont(font);
-        ui->tableWidget_2->setFont(font);
-
-        HDDMenu(panels[active_panel] && panels[active_panel]->hdd_mode);
+        refreshActivePanelUI();
     }
 }
 
@@ -1612,32 +1640,28 @@ void MainWindow::Save(){
         return SaveAs();
 
     auto& panel = *panels[active_panel];
-    QGroupBox* gb;
-    if (panel.modified){
-        if (active_panel == 0)
-            gb = ui->groupBox;
-        else
-            gb = ui->groupBox_2;
+    if (!panel.modified)
+        return;
 
-        int res;
-        if (panel.hdd_mode){
-            res = saveFileQt(panel.path, panel.hdd_data->data(), panel.hdd_data->size(), this);
-        }
-        else{
-            res = saveFileQt(panel.path, ccos_disk_data(panel.disk), ccos_disk_size(panel.disk), this);
-        }
+    int res;
+    if (panel.hdd_mode)
+        res = saveFileQt(panel.path, panel.hdd_data->data(), panel.hdd_data->size(), this);
+    else
+        res = saveFileQt(panel.path, ccos_disk_data(panel.disk), ccos_disk_size(panel.disk), this);
 
-        if (res == -1){
-            QMessageBox::critical(this, "Unable to save file",
-                            QString("Unable to save file \"%1\". Please check the path.").arg(panel.path));
-            return;
-        }
-        panel.modified = false;
-        int other = !active_panel;
-        if (panel.hdd_data && panel.hdd_data.use_count() > 1 && panels[other])
-            panels[other]->modified = false;
-        gb->setTitle(gb->title().left(gb->title().size()-1));
+    if (res == -1){
+        QMessageBox::critical(this, "Unable to save file",
+                        QString("Unable to save file \"%1\". Please check the path.").arg(panel.path));
+        return;
     }
+    panel.modified = false;
+    int other = !active_panel;
+    bool shared = panel.hdd_data && panel.hdd_data.use_count() > 1 && panels[other];
+    if (shared)
+        panels[other]->modified = false;
+    updatePanelTitle(active_panel);
+    if (shared)
+        updatePanelTitle(other);
 }
 
 void MainWindow::SaveAs(){
@@ -1645,22 +1669,15 @@ void MainWindow::SaveAs(){
         return;
 
     auto& panel = *panels[active_panel];
-    QGroupBox* gb;
-    if (active_panel == 0)
-        gb = ui->groupBox;
-    else
-        gb = ui->groupBox_2;
     QString nameQ = QFileDialog::getSaveFileName(this, tr("Save as"), "", "GRiD Image Files (*.img)");
     if (nameQ == "")
         return;
 
     int res;
-    if (panel.hdd_mode){
+    if (panel.hdd_mode)
         res = saveFileQt(nameQ, panel.hdd_data->data(), panel.hdd_data->size(), this);
-    }
-    else{
+    else
         res = saveFileQt(nameQ, ccos_disk_data(panel.disk), ccos_disk_size(panel.disk), this);
-    }
 
     if (res == -1){
         QMessageBox::critical(this, "Unable to save file",
@@ -1669,11 +1686,14 @@ void MainWindow::SaveAs(){
     }
     panel.path = nameQ;
     if (panel.modified){
-        gb->setTitle(gb->title().left(gb->title().size()-1));
         panel.modified = false;
         int other = !active_panel;
-        if (panel.hdd_data && panel.hdd_data.use_count() > 1 && panels[other])
+        bool shared = panel.hdd_data && panel.hdd_data.use_count() > 1 && panels[other];
+        if (shared)
             panels[other]->modified = false;
+        updatePanelTitle(active_panel);
+        if (shared)
+            updatePanelTitle(other);
     }
 }
 
@@ -1682,12 +1702,6 @@ void MainWindow::SavePart(){
     panel.hdd_mode = false;
     bool oldch = panel.modified;
     panel.modified = true;
-    QGroupBox* gb;
-    if (active_panel == 0)
-        gb = ui->groupBox;
-    else
-        gb = ui->groupBox_2;
-    gb->setTitle(gb->title()+' ');
     SaveAs();
 
     if (!panel.modified){
@@ -1707,8 +1721,8 @@ void MainWindow::SavePart(){
     else{
         panel.hdd_mode = true;
         panel.modified = oldch;
-        gb->setTitle(gb->title().left(gb->title().size()-1));
     }
+    updatePanelTitle(active_panel);
 }
 
 void MainWindow::SetActivePart() {
