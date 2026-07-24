@@ -1243,21 +1243,20 @@ static ccos_disk_t* tryFromBootsector(uint8_t* data, size_t size) {
 }
 
 static ccos_disk_t* tryDetectBySize(uint8_t* data, size_t size) {
-    if (size == 384 * 1024) {
-        return tryOpenAs(data, size,
-            GRID_BUBBLE_SECTOR_SIZE, GRID_BUBBLE_SUPERBLOCK_FID, GRID_BUBBLE_BITMAP_FID);
-    }
-    if (size == 360 * 1024 || size == 720 * 1024) {
-        return tryOpenAs(data, size,
-            GRID_FLOPPY_SECTOR_SIZE, GRID_FLOPPY_SUPERBLOCK_FID, GRID_FLOPPY_BITMAP_FID);
+    ccos_disk_t* disk = tryOpenAs(data, size,
+        GRID_BUBBLE_SECTOR_SIZE, GRID_BUBBLE_SUPERBLOCK_FID, GRID_BUBBLE_BITMAP_FID);
+    if (disk) {
+        return disk;
     }
 
-    if (size == 10 * 1024 * 1024 || size == 20 * 1024 * 1024) {
-        return tryOpenAs(data, size,
-            GRID_HDD_SECTOR_SIZE, GRID_HDD_SUPERBLOCK_FID, GRID_HDD_BITMAP_FID);
+    disk = tryOpenAs(data, size,
+        GRID_FLOPPY_SECTOR_SIZE, GRID_FLOPPY_SUPERBLOCK_FID, GRID_FLOPPY_BITMAP_FID);
+    if (disk) {
+        return disk;
     }
 
-    return nullptr;
+    return tryOpenAs(data, size,
+        GRID_HDD_SECTOR_SIZE, GRID_HDD_SUPERBLOCK_FID, GRID_HDD_BITMAP_FID);
 }
 
 void MainWindow::openValidNonMbrDisk(QString path, ccos_disk_t* disk) {
