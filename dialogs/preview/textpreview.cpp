@@ -1,8 +1,16 @@
 #include "textpreview.h"
 
 #include <QPlainTextEdit>
+#include <QScrollBar>
+#include <QTextLayout>
+#include <QTextBlock>
+#include <QPainter>
+#include <QPaintEvent>
 #include <QMessageBox>
 #include <QString>
+#include <QWidget>
+#include <QVBoxLayout>
+#include <QCheckBox>
 
 // Decode file bytes as Latin-1, rendering control characters as Unicode
 // control-picture glyphs (NUL -> ␀, BEL -> ␇, ESC -> ␛, DEL -> ␡, etc.) so they
@@ -28,9 +36,94 @@ static QString decodeText(const uint8_t* data, size_t size) {
     return out;
 }
 
+// QPlainTextEdit subclass that paints a soft wrap marker ("↵") at the end of
+// each visual line that was wrapped by word-wrap, so wrap points are visible.
+// Only applies when lineWrapMode() is WidgetWidth; NoWrap draws nothing.
+class WrapPreviewEdit : public QPlainTextEdit {
+public:
+    using QPlainTextEdit::QPlainTextEdit;
+
+    // Toggle wrap mode while keeping the same block visible at the top,
+    // so flipping the checkbox doesn't snap the view back to the start.
+    void setLineWrapModePreservingScroll(LineWrapMode mode);
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+};
+
+void WrapPreviewEdit::setLineWrapModePreservingScroll(LineWrapMode mode) {
+    if (lineWrapMode() == mode) {
+        return;
+    }
+
+    // Remember the first visible block and how far into it we've scrolled,
+    // so we can restore roughly the same view after the document reflows.
+    const QTextBlock first = firstVisibleBlock();
+    const int oldBlockTop = first.isValid() ? static_cast<int>(blockBoundingGeometry(first).top()) : 0;
+    const int offsetWithinBlock = verticalScrollBar()->value() - oldBlockTop;
+
+    setLineWrapMode(mode);
+
+    if (first.isValid()) {
+        const int newBlockTop = static_cast<int>(blockBoundingGeometry(first).top());
+        verticalScrollBar()->setValue(newBlockTop + offsetWithinBlock);
+    }
+}
+
+void WrapPreviewEdit::paintEvent(QPaintEvent* event) {
+    QPlainTextEdit::paintEvent(event);
+
+    // Nothing to mark when wrapping is off.
+    if (lineWrapMode() == QPlainTextEdit::NoWrap) {
+        return;
+    }
+
+    QPainter p(viewport());
+    p.setPen(palette().color(QPalette::Disabled, QPalette::Text));
+    p.setFont(font());
+
+    static const QString wrapMark = QStringLiteral("\u21B5");
+
+    const QRectF dirty = event->rect();
+    const QPointF offset = contentOffset();
+    QTextBlock block = firstVisibleBlock();
+
+    while (block.isValid()) {
+        const QRectF blockRect = blockBoundingGeometry(block).translated(offset);
+
+        if (blockRect.top() > dirty.bottom()) {
+            break;  // Rest of the document is below the dirty region.
+        }
+        if (blockRect.bottom() < dirty.top()) {
+            block = block.next();
+            continue;  // Block is above the dirty region.
+        }
+
+        // For a wrapped block, every visual line except the last continues
+        // onto the next line, so mark those.
+        QTextLayout* tl = block.layout();
+        if (tl != nullptr) {
+            const int lineCount = tl->lineCount();
+            for (int i = 0; i < lineCount - 1; i++) {
+                const QTextLine line = tl->lineAt(i);
+                if (!line.isValid()) {
+                    continue;
+                }
+                const qreal x = blockRect.left() + line.position().x() + line.naturalTextWidth() + 2;
+                const qreal y = blockRect.top() + line.position().y() + line.ascent();
+                p.drawText(QPointF(x, y), wrapMark);
+            }
+        }
+
+        block = block.next();
+    }
+}
+
 bool TextPreview::supports(const QString& fileType, size_t fileSize) const {
     (void)fileSize;
-    return fileType.compare("text", Qt::CaseInsensitive) == 0;
+    return fileType.compare("text", Qt::CaseInsensitive) == 0 ||
+        fileType.compare("develop", Qt::CaseInsensitive) == 0 ||
+        fileType.compare("lst", Qt::CaseInsensitive) == 0;
 }
 
 QWidget* TextPreview::createWidget(ccos_disk_t* disk, ccos_inode_t* file, QWidget* parent) {
@@ -41,9 +134,9 @@ QWidget* TextPreview::createWidget(ccos_disk_t* disk, ccos_inode_t* file, QWidge
         return nullptr;
     }
 
-    auto* edit = new QPlainTextEdit(parent);
+    auto* edit = new WrapPreviewEdit(parent);
     edit->setReadOnly(true);
-    edit->setLineWrapMode(QPlainTextEdit::NoWrap);
+    edit->setLineWrapMode(QPlainTextEdit::WidgetWidth);  // word wrap on by default
     QFont font("Monospace");
     font.setStyleHint(QFont::TypeWriter);
     edit->setFont(font);
@@ -53,7 +146,23 @@ QWidget* TextPreview::createWidget(ccos_disk_t* disk, ccos_inode_t* file, QWidge
     size_t offset = (prop_length <= size) ? prop_length : size;
     size_t text_len = size - offset;
     edit->setPlainText(decodeText(data + offset, text_len));
-
     free(data);
-    return edit;
+
+    auto* container = new QWidget(parent);
+    auto* layout = new QVBoxLayout(container);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(6);
+
+    auto* wrapCheck = new QCheckBox(QStringLiteral("Word wrap"), container);
+    wrapCheck->setChecked(true);
+    layout->addWidget(wrapCheck);
+
+    layout->addWidget(edit, 1);
+
+    QObject::connect(wrapCheck, &QCheckBox::toggled, edit, [edit](bool checked) {
+        edit->setLineWrapModePreservingScroll(
+            checked ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
+    });
+
+    return container;
 }
