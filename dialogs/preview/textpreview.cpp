@@ -12,8 +12,11 @@ static QString decodeText(const uint8_t* data, size_t size) {
     out.reserve(static_cast<int>(size));
     for (size_t i = 0; i < size; i++) {
         unsigned char c = data[i];
-        if (c == '\t' || c == '\n') {
-            out += QLatin1Char(static_cast<char>(c));
+        if (c == '\t') {
+            out += QLatin1Char('\t');
+        } else if (c == '\n') {
+            out += QChar(static_cast<ushort>(0x2400 + c));
+            out += QLatin1Char('\n');
         } else if (c < 0x20) {
             out += QChar(static_cast<ushort>(0x2400 + c));
         } else if (c == 0x7F) {
