@@ -49,7 +49,9 @@ PreviewDlg::PreviewDlg(ccos_disk_t* disk, ccos_inode_t* file, QWidget* parent) :
     }
     layout->addWidget(content, 1);
 
-    setFixedSize(660, 540);
+    resize(660, 540);
+    setMinimumSize(360, 280);
+    setSizeGripEnabled(true);
 }
 
 void PreviewDlg::showEvent(QShowEvent* event) {
