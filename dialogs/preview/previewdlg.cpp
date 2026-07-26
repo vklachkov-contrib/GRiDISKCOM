@@ -3,6 +3,7 @@
 #include "filepreview.h"
 #include "textpreview.h"
 #include "canvaspreview.h"
+#include "worksheetpreview.h"
 
 #include <QVBoxLayout>
 #include <QLabel>
@@ -11,6 +12,7 @@ static QList<FilePreview*> previewRegistry() {
     static QList<FilePreview*> registry = {
         new TextPreview(),
         new CanvasPreview(),
+        new WorksheetPreview(),
     };
     return registry;
 }
