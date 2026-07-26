@@ -1126,7 +1126,7 @@ void MainWindow::Extract(){
         if (called.size() == 7 && panel.inodes[called[0]->row()] == nullptr)
             return;
         QString todir = QFileDialog::getExistingDirectory(this, tr("Extract to"), "",
-                                                          QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+            QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks | QFileDialog::DontUseNativeDialog);
         if (todir == "")
             return;
         for (int t = 0; t < called.size(); t+=7){
@@ -1144,7 +1144,7 @@ void MainWindow::ExtractAll(){
     if (panels[active_panel]){
         auto& panel = *panels[active_panel];
         QString todir = QFileDialog::getExistingDirectory(this, tr("Extract all to"), "",
-                                                          QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+            QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks | QFileDialog::DontUseNativeDialog);
         if (todir == "")
             return;
         int res = dumpImgQt(panel.disk, todir, QFileInfo(panel.path).baseName(), this);
