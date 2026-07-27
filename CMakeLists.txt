@@ -41,6 +41,8 @@ add_executable(GRiDISKCOM ${GUI_TYPE}
         dialogs/datedlg.h
         dialogs/datedlg.ui
         dialogs/preview/filepreview.h
+        dialogs/preview/omf/omf_record.cpp
+        dialogs/preview/omf/omf_record.h
         dialogs/preview/textpreview.cpp
         dialogs/preview/textpreview.h
         dialogs/preview/canvaspreview.cpp

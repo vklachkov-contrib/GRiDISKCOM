@@ -1,5 +1,7 @@
 #include "canvaspreview.h"
 
+#include "omf/omf_record.h"
+
 #include <QLabel>
 #include <QImage>
 #include <QPixmap>
@@ -11,12 +13,6 @@
 
 namespace {
 
-enum RecordType : uint8_t {
-    MetadataRecord = 0xFE,  // metadata / dimensions
-    LabelRecord    = 0xFD,  // labelled block (owner / font / objects)
-};
-
-// Sanity guards to prevent garbage from being decoded.
 constexpr int kMaxImageWidth  = 8192;
 constexpr int kMaxImageHeight = 4096;
 
@@ -24,114 +20,72 @@ struct CanvasImage {
     QString format;
     int w = 0;
     int h = 0;
+    int stride = 0;
     const uint8_t* raster = nullptr;
     size_t rasterLen = 0;
 };
 
-inline uint16_t u16le(const uint8_t* p) {
-    return uint16_t(p[0]) | (uint16_t(p[1]) << 8);
+// Gridpaint packs pixels into 16-bit words (MSB first). The logical width need
+// not be a multiple of 16, but each row is padded to a whole number of words:
+// e.g. a 70-pixel-wide image is stored in 80-pixel (10-byte) rows.
+inline int wordAlignedStride(int w) {
+    return ((w + 15) / 16) * 2;
 }
 
 inline size_t rasterBytes(int w, int h) {
-    return size_t(w / 8) * size_t(h);
+    return size_t(wordAlignedStride(w)) * size_t(h);
 }
 
 bool plausibleDims(int w, int h) {
-    // Width must be a whole number of 16-bit words: the pixel packing reads
-    // two bytes per 16 pixels, so a non-multiple-of-16 width would misalign.
-    return w > 0 && w <= kMaxImageWidth && h > 0 && h <= kMaxImageHeight && (w % 16) == 0;
+    return w > 0 && w <= kMaxImageWidth && h > 0 && h <= kMaxImageHeight;
 }
 
-bool isGridpaintSignature(const uint8_t* data, size_t size) {
-    return size >= 6 && data[0] == MetadataRecord &&
-        data[3] == 0x61 && data[4] == 0xDE && data[5] == 0x52;
-}
+// Decodes GRiDPaint Canvas files. The image size is stored as a TLV record
+// terminated by 0xFF: FE 04 00 <w_lo> <w_hi> <h_lo> <h_hi> FF <raster...>.
+CanvasImage decodeFromMetadata(const OmfMetadata& md) {
+    const uint8_t* end = md.content + md.contentSize;
 
-CanvasImage decodeGridpaint(const uint8_t* data, size_t size) {
-    const uint8_t* p = data;
-    const uint8_t* end = data + size;
-
-    while (end - p >= 3) {
-        uint8_t type = *p++;
-
-        size_t len = u16le(p);
-        p += 2;
-
-        if (type != MetadataRecord && type != LabelRecord) {
-            break;
-        }
-
-        if (p + len > end) {
-            break;
-        }
-
-        const uint8_t* payload = p;
-        p += len;
-
-        // The dimensions record is a MetadataRecord with a 4-byte payload
-        // (u16 width + u16 height), the raster follows it directly.
-        //
-        // The only other 4-byte MetadataRecord is the signature, whose payload fails
-        // plausibleDims, so the first match here is the real dims record.
-        if (type == MetadataRecord && len == 4) {
-            int w = u16le(payload);
-            int h = u16le(payload + 2);
-            size_t expect = rasterBytes(w, h);
-
-            const uint8_t* r = p;
-            if (r < end && *r == 0xFF) {
-                r++;  // skip the block marker
-            }
-
-            if (plausibleDims(w, h) && size_t(end - r) >= expect) {
-                CanvasImage img;
-                img.format = QStringLiteral("gridpaint");
-                img.w = w;
-                img.h = h;
-                img.raster = r;
-                img.rasterLen = expect;
-                return img;
-            }
-        }
-    }
-
-    return CanvasImage{};
-}
-
-CanvasImage decodeRawWithHeader(const uint8_t* data, size_t size) {
-    const uint8_t* p = data;
-    const uint8_t* end = data + size;
-
-    if (end - p < 4) {
+    const OmfRecord dims = readOmfRecord(md.content, end);
+    if (dims.type != kOmfMetadataRecord || dims.length != 4) {
         return CanvasImage{};
     }
 
-    int w = u16le(p); p += 2;
-    int h = u16le(p); p += 2;
-
-    size_t expect = rasterBytes(w, h);
-    if (plausibleDims(w, h) && size_t(end - p) == expect) {
-        CanvasImage img;
-        img.format = QStringLiteral("raw");
-        img.w = w;
-        img.h = h;
-        img.raster = p;
-        img.rasterLen = expect;
-        return img;
+    const int w = omfU16LE(dims.payload);
+    const int h = omfU16LE(dims.payload + 2);
+    if (!plausibleDims(w, h)) {
+        return CanvasImage{};
     }
 
-    return CanvasImage{};
+    const uint8_t* raster = dims.payload + 4;
+    if (*raster++ != 0xFF) {
+        return CanvasImage{};
+    }
+
+    const size_t expect = rasterBytes(w, h);
+    if (end - raster < expect) {
+        return CanvasImage{};
+    }
+
+    CanvasImage img;
+    img.format = QStringLiteral("gridpaint");
+    img.w = w;
+    img.h = h;
+    img.stride = wordAlignedStride(w);
+    img.raster = raster;
+    img.rasterLen = expect;
+
+    return img;
 }
 
 CanvasImage decodeRawHeaderless(const uint8_t* data, size_t size) {
-    const size_t compassScreenWidth = 320;
+    constexpr int compassScreenWidth = 320;
 
-    const size_t bytesPerRow = compassScreenWidth / 8;
-    if (size == 0 || size % bytesPerRow != 0) {
+    const int stride = wordAlignedStride(compassScreenWidth);
+    if (size == 0 || size % stride != 0) {
         return CanvasImage{};
     }
 
-    int h = static_cast<int>(size / bytesPerRow);
+    int h = static_cast<int>(size / stride);
     if (h <= 0 || h > kMaxImageHeight) {
         return CanvasImage{};
     }
@@ -140,45 +94,44 @@ CanvasImage decodeRawHeaderless(const uint8_t* data, size_t size) {
     img.format = QStringLiteral("raw");
     img.w = compassScreenWidth;
     img.h = h;
+    img.stride = stride;
     img.raster = data;
     img.rasterLen = size;
 
     return img;
 }
 
-CanvasImage detectCanvas(const uint8_t* data, size_t size) {
-    if (isGridpaintSignature(data, size)) {
-        return decodeGridpaint(data, size);
-    }
-    if (CanvasImage img = decodeRawWithHeader(data, size); img.raster) {
+CanvasImage detectCanvas(const uint8_t* data, size_t size, uint32_t propLength) {
+    OmfMetadata md = parseOmfMetadata(data, size, propLength);
+    if (CanvasImage img = decodeFromMetadata(md); img.raster) {
         return img;
+    } else {
+        return decodeRawHeaderless(md.content, md.contentSize);
     }
-    return decodeRawHeaderless(data, size);
 }
 
-QImage renderMono(const uint8_t* raster, size_t rasterLen, int w, int h) {
-    QImage img(w, h, QImage::Format_RGB32);
-    img.fill(qRgb(0, 0, 0));
+QImage renderMono(const uint8_t* data, size_t dataLen, int w, int h, int bytesPerRow) {
+    QImage img(w, h, QImage::Format_Mono);
+    img.setColor(0, qRgb(0, 0, 0));
+    img.setColor(1, qRgb(255, 255, 255));
+    img.fill(0);
 
-    const int bytesPerRow = w / 8;
-    const int rows = std::min(h, static_cast<int>(rasterLen / bytesPerRow));
-    const QRgb on = qRgb(255, 255, 255);
-    const QRgb off = qRgb(0, 0, 0);
-
+    const int wordsPerRow = bytesPerRow / 2;
+    const int rows = std::min(h, static_cast<int>(dataLen / bytesPerRow));
     for (int y = 0; y < rows; y++) {
-        const uint8_t* row = raster + y * bytesPerRow;
-        QRgb* scan = reinterpret_cast<QRgb*>(img.scanLine(y));
-        for (int x = 0; x < w; x++) {
-            const int bo = (x / 16) * 2;
-            uint16_t word = static_cast<uint16_t>(row[bo] | (row[bo + 1] << 8));
-            scan[x] = (word >> (15 - (x % 16))) & 1 ? on : off;
+        const uint8_t* src = data + y * bytesPerRow;
+        uint8_t* dst = img.scanLine(y);
+
+        for (int i = 0; i < wordsPerRow; i++) {
+            dst[2 * i]     = src[2 * i + 1];
+            dst[2 * i + 1] = src[2 * i];
         }
     }
     return img;
 }
 
-// QLabel that rescales its pixmap to fit on resize, keeping aspect ratio.
-// FastTransformation keeps the 1-bpp pixel art crisp instead of smearing it.
+// QLabel that rescales its pixmap on resize, keeping aspect ratio with crisp
+// nearest-neighbour scaling for pixel art.
 class ImageLabel : public QLabel {
 public:
     using QLabel::QLabel;
@@ -217,19 +170,20 @@ bool CanvasPreview::supports(const QString& fileType, size_t fileSize) const {
 QWidget* CanvasPreview::createWidget(ccos_disk_t* disk, ccos_inode_t* file, QWidget* parent) {
     uint8_t* data = nullptr;
     size_t size = 0;
+
     if (ccos_read_file(disk, file, &data, &size) != CCOS_OK || data == nullptr) {
         QMessageBox::critical(parent, "Preview", "Failed to read file contents!");
         return nullptr;
     }
 
-    CanvasImage img = detectCanvas(data, size);
+    CanvasImage img = detectCanvas(data, size, file->desc.prop_length);
     if (img.raster == nullptr) {
+        QMessageBox::warning(parent, "Preview", "Could not decode this canvas image.");
         free(data);
-        QMessageBox::warning(parent, "Preview", "Could not decode this canvas image (unknown format).");
         return nullptr;
     }
 
-    QImage image = renderMono(img.raster, img.rasterLen, img.w, img.h);
+    QImage image = renderMono(img.raster, img.rasterLen, img.w, img.h, img.stride);
     free(data);
 
     auto* container = new QWidget(parent);

@@ -1,5 +1,7 @@
 #include "textpreview.h"
 
+#include "omf/omf_record.h"
+
 #include <QPlainTextEdit>
 #include <QScrollBar>
 #include <QTextLayout>
@@ -141,11 +143,10 @@ QWidget* TextPreview::createWidget(ccos_disk_t* disk, ccos_inode_t* file, QWidge
     font.setStyleHint(QFont::TypeWriter);
     edit->setFont(font);
 
-    // The first `prop_length` bytes of the file store properties and are not part of the text.
-    uint32_t prop_length = file->desc.prop_length;
-    size_t offset = (prop_length <= size) ? prop_length : size;
-    size_t text_len = size - offset;
-    edit->setPlainText(decodeText(data + offset, text_len));
+    // The first `prop_length` bytes are the OMF metadata stream.
+    // The rest is the text body.
+    OmfMetadata md = parseOmfMetadata(data, size, file->desc.prop_length);
+    edit->setPlainText(decodeText(md.content, md.contentSize));
     free(data);
 
     auto* container = new QWidget(parent);

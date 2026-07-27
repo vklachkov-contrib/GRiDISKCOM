@@ -1,5 +1,7 @@
 #include "worksheetpreview.h"
 
+#include "omf/omf_record.h"
+
 #include <QFont>
 #include <QHeaderView>
 #include <QLabel>
@@ -13,131 +15,89 @@
 
 namespace {
 
-enum RecordType : uint8_t {
-    MetadataRecord = 0xFE,  // metadata: title, signature
-    LabelRecord    = 0xFD,  // labelled block (column labels / formulas)
-};
+constexpr uint8_t kTitleSubtype       = 0x68;
+constexpr uint8_t kColumnLabelSubtype = 0x00;
 
-constexpr uint8_t SignatureByte      = 0x61;
-constexpr uint8_t TitleSubtype       = 0x68;
-constexpr uint8_t ColumnLabelSubtype = 0x00;
-
-// Sanity guards to prevent garbage from being decoded.
 constexpr int kMaxRows = 50000;
 constexpr int kMaxCols = 256;
 
 struct Worksheet {
     QString title;
     QMap<int, QString> columnLabels;  // 1-based column index -> label text
-    QList<QStringList> rows;          // each row is a list of cell strings
-    bool valid = false;               // set only after the signature matches
+    QList<QStringList> rows;
+    bool valid = false;
 };
 
-inline uint16_t u16le(const uint8_t* p) {
-    return uint16_t(p[0]) | (uint16_t(p[1]) << 8);
-}
-
-bool isWorksheetSignature(const uint8_t* data, size_t size) {
-    // The opening record of every GRiDPlan II worksheet is `FE 04 00 61 …`
-    // (a 4-byte metadata record whose payload begins with the signature byte).
-    return size >= 4 && data[0] == MetadataRecord && data[3] == SignatureByte;
-}
-
-QList<QStringList> splitCsvRows(const QByteArray& csv) {
-    QString text = QString::fromLatin1(csv.constData(), csv.size());
-    QStringList lines = text.split(QLatin1Char('\n'));
-    if (!lines.isEmpty() && lines.last().isEmpty() && csv.endsWith('\n')) {
-        lines.removeLast();
-    }
+// Parse worksheet content into rows of tab-separated cells in a single pass,
+// skipping over interleaved FE/FD OMF records (e.g. per-row formula byte-code).
+// CSV text is plain ASCII, so 0xFE/0xFD never appear inside a cell value.
+QList<QStringList> parseCsvRows(const uint8_t* data, size_t size) {
     QList<QStringList> rows;
-    rows.reserve(lines.size());
-    for (const QString& line : lines) {
-        QString row = line;
-        if (row.endsWith(QLatin1Char('\r'))) {
-            row.chop(1);
-        }
-        rows.append(row.split(QLatin1Char('\t'), Qt::KeepEmptyParts));
-    }
-    return rows;
-}
-
-Worksheet parseWorksheet(const uint8_t* data, size_t size) {
-    Worksheet ws;
-    if (!isWorksheetSignature(data, size)) {
-        printf("Invalid worksheet\n");
-        return ws;
-    }
+    QStringList row;
+    QByteArray cell;
 
     const uint8_t* p = data;
     const uint8_t* end = data + size;
 
-    // Phase 1 — header records. Stop at the first byte that is not a record
-    // leader; that byte begins the CSV cell-value block.
-    while (end - p >= 3) {
-        uint8_t type = *p++;
-        if (type != MetadataRecord && type != LabelRecord) {
-            break;
-        }
-
-        size_t len = u16le(p);
-        p += 2;
-
-        if (len < 1) {
-            continue;
-        }
-
-        const uint8_t* payload = p;
-        p += len;
-
-        if (payload + len > end) {
-            break;
-        }
-
-        uint8_t sub = *payload++;
-
-        if (type == MetadataRecord) {
-            if (sub == TitleSubtype) {
-                ws.title = QString::fromLatin1(reinterpret_cast<const char*>(payload), int(len - 1));
-            }
-        } else {  // LabelRecord
-            if (sub == ColumnLabelSubtype && len >= 2) {
-                int col = *payload++;
-                ws.columnLabels[col] = QString::fromLatin1(reinterpret_cast<const char*>(payload), int(len - 2));
-            }
-        }
-    }
-
-    // Phase 2 — data section: gather the raw CSV bytes, skipping over any
-    // interleaved FE/FD records (e.g. per-row formula byte-code, FD 0x02).
-    QByteArray csv;
-    csv.reserve(static_cast<int>(end - p));
     while (p < end) {
-        uint8_t type = *p++;
-        if (type != MetadataRecord && type != LabelRecord) {
-            csv.append(static_cast<char>(type));
-            p++;
-            continue;
+        if (*p == kOmfMetadataRecord || *p == kOmfLabelRecord) {
+            const OmfRecord rec = readOmfRecord(p, end);
+            if (rec.payload != nullptr) {
+                p = rec.payload + rec.length;
+                continue;
+            }
         }
 
-        if (end - p < 3) {
-            break;  // truncated leader; leave the tail uncollected
-        }
-
-        size_t len = u16le(p);
-        p += 2;
-
-        const uint8_t* payload = p;
-        p += len;
-
-        if (payload + len > end) {
-            // Truncated trailing record — treat the remainder as CSV.
-            csv.append(reinterpret_cast<const char*>(p), static_cast<int>(end - p));
-            break;
+        const char c = static_cast<char>(*p++);
+        if (c == '\t') {
+            row.append(QString::fromLatin1(cell));
+            cell.clear();
+        } else if (c == '\n') {
+            row.append(QString::fromLatin1(cell));
+            rows.append(row);
+            row.clear();
+            cell.clear();
+        } else if (c != '\r') {
+            cell.append(c);
         }
     }
 
-    ws.rows = splitCsvRows(csv);
+    if (!cell.isEmpty() || !row.isEmpty()) {
+        row.append(QString::fromLatin1(cell));
+        rows.append(row);
+    }
+
+    return rows;
+}
+
+Worksheet parseWorksheet(const uint8_t* data, size_t size, uint32_t propLength) {
+    Worksheet ws;
+
+    OmfMetadata md = parseOmfMetadata(data, size, propLength);
+    if (md.records.empty()) {
+        return ws;  // not a worksheet: no metadata stream
+    }
+
+    if (const OmfRecord* title = md.find(kOmfMetadataRecord, kTitleSubtype)) {
+        // payload[0] = subtype 'h', payload[1..] = title text.
+        ws.title = QString::fromLatin1(
+            reinterpret_cast<const char*>(title->payload + 1), int(title->length - 1));
+    }
+
+    // payload[0] = subtype 0x00, payload[1] = 1-based column index, rest = label.
+    // length >= 2 is required: payload[1] must exist. (subtype 0x00 also matches
+    // zero-length records via subtype(), so the guard is not redundant.)
+    for (const OmfRecord* r : md.findAll(kOmfLabelRecord, kColumnLabelSubtype)) {
+        if (r->length >= 2) {
+            int col = r->payload[1];
+            ws.columnLabels[col] = QString::fromLatin1(
+                reinterpret_cast<const char*>(r->payload + 2), int(r->length - 2));
+        }
+    }
+
+    ws.rows = parseCsvRows(md.content, md.contentSize);
     ws.valid = true;
+
     return ws;
 }
 
@@ -156,13 +116,13 @@ QWidget* WorksheetPreview::createWidget(ccos_disk_t* disk, ccos_inode_t* file, Q
         return nullptr;
     }
 
-    Worksheet ws = parseWorksheet(data, size);
+    Worksheet ws = parseWorksheet(data, size, file->desc.prop_length);
+    free(data);
+
     if (!ws.valid) {
-        free(data);
         QMessageBox::warning(parent, "Preview", "Could not decode this worksheet (unknown format).");
         return nullptr;
     }
-    free(data);
 
     auto* container = new QWidget(parent);
     auto* layout = new QVBoxLayout(container);
@@ -183,7 +143,6 @@ QWidget* WorksheetPreview::createWidget(ccos_disk_t* disk, ccos_inode_t* file, Q
     for (const QStringList& row : ws.rows) {
         colCount = qMax(colCount, row.size());
     }
-
     for (auto it = ws.columnLabels.cbegin(); it != ws.columnLabels.cend(); ++it) {
         if (it.key() <= kMaxCols) {
             colCount = qMax(colCount, it.key());
@@ -201,18 +160,19 @@ QWidget* WorksheetPreview::createWidget(ccos_disk_t* disk, ccos_inode_t* file, Q
     font.setStyleHint(QFont::TypeWriter);
     table->setFont(font);
 
-    if (!ws.columnLabels.isEmpty()) {
+    if (ws.columnLabels.isEmpty()) {
+        for (int c = 0; c < colCount; ++c) {
+            table->setHorizontalHeaderItem(c, new QTableWidgetItem(QString::number(c + 1)));
+        }
+    } else {
         QStringList headerLabels;
         headerLabels.reserve(colCount);
         for (int c = 0; c < colCount; ++c) {
             headerLabels << ws.columnLabels.value(c + 1);
         }
         table->setHorizontalHeaderLabels(headerLabels);
-    } else {
-        for (int c = 0; c < colCount; ++c) {
-            table->setHorizontalHeaderItem(c, new QTableWidgetItem(QString::number(c + 1)));
-        }
     }
+
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     table->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
 
@@ -224,6 +184,7 @@ QWidget* WorksheetPreview::createWidget(ccos_disk_t* disk, ccos_inode_t* file, Q
             }
         }
     }
+
     layout->addWidget(table, 1);
 
     return container;
