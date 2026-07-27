@@ -485,6 +485,7 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(std::make_uniqu
         tw->verticalHeader()->hide();
         tw->setSelectionBehavior(QAbstractItemView::SelectRows);
         tw->setContextMenuPolicy(Qt::CustomContextMenu);
+        tw->installEventFilter(this);
         connect(tw, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(ShowPreview(QPoint)));
     }
     QFont diskfont;
@@ -1181,6 +1182,27 @@ void MainWindow::HDDMenu(bool enab){
     ui->actionSep_save->setEnabled(enab);
 }
 
+bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
+    if (event->type() != QEvent::KeyPress) {
+        return QMainWindow::eventFilter(obj, event);
+    }
+
+    const int panel_idx = (obj == ui->tableWidget_2) ? 1 : 0;
+
+    auto* keyEvent = static_cast<QKeyEvent*>(event);
+    switch (keyEvent->key()) {
+        case Qt::Key_Escape:
+        {
+            if (goToParentDir(panel_idx)) {
+                return true;
+            }
+            break;
+        }
+    }
+
+    return QMainWindow::eventFilter(obj, event);
+}
+
 void MainWindow::doPreview(int panel_idx, ccos_inode_t* file){
     if (!panels[panel_idx] || file == nullptr)
         return;
@@ -1597,18 +1619,34 @@ void MainWindow::OpenDir(){
         if (dir == nullptr && !panel.in_subdir)
             return;
         if (called->row() == 0 && panel.in_subdir){
-            ccos_inode_t* root = ccos_get_root_dir(panel.disk);
-            panel.current_dir = ccos_get_parent_dir(panel.disk, panel.current_dir);
-            if (panel.current_dir == root)
-                panel.in_subdir = false;
-            fillTable(active_panel, panel.current_dir, panel.in_subdir);
+            goToParentDir(active_panel);
         }
         else if (!panel.in_subdir){ //All files in the root are directories
             panel.current_dir = dir;
             panel.in_subdir = true;
             fillTable(active_panel, dir, panel.in_subdir);
         }
+        else if (!ccos_is_dir(dir)) {
+            doPreview(active_panel, dir);
+        }
     }
+}
+
+bool MainWindow::goToParentDir(int panel_idx) {
+    if (!panels[panel_idx]) {
+        return false;
+    }
+    auto& panel = *panels[panel_idx];
+    if (!panel.in_subdir) {
+        return false;  // already at the disk root, nothing above it
+    }
+    ccos_inode_t* root = ccos_get_root_dir(panel.disk);
+    panel.current_dir = ccos_get_parent_dir(panel.disk, panel.current_dir);
+    if (panel.current_dir == root) {
+        panel.in_subdir = false;
+    }
+    fillTable(panel_idx, panel.current_dir, panel.in_subdir);
+    return true;
 }
 
 void MainWindow::OpenImg(){
@@ -1618,7 +1656,7 @@ void MainWindow::OpenImg(){
     LoadImg(path);
 }
 
-void  MainWindow::Rename(){
+void MainWindow::Rename(){
     if (panels[active_panel]){
         auto& panel = *panels[active_panel];
         QTableWidget* tw;

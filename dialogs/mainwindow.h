@@ -4,6 +4,7 @@
 #include <QMessageBox>
 #include <QFileDialog>
 #include <QCloseEvent>
+#include <QKeyEvent>
 #include <QInputDialog>
 #include <QMimeData>
 #include "ui_mainwindow.h"
@@ -103,6 +104,10 @@ public:
     ~MainWindow();
     std::array<std::optional<DiskPanel>, 2> panels;
     int active_panel = 0;
+
+protected:
+    bool eventFilter(QObject* obj, QEvent* event) override;
+
 private:
     std::unique_ptr<Ui::MainWindow> ui;
 
@@ -118,6 +123,8 @@ private:
 
     void updatePanelTitle(int panel_idx);
     void refreshActivePanelUI();
+
+    bool goToParentDir(int panel_idx);
 
     void doPreview(int panel_idx, ccos_inode_t* file);
 };
