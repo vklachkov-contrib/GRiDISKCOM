@@ -4,15 +4,19 @@
 #include "textpreview.h"
 #include "canvaspreview.h"
 #include "worksheetpreview.h"
+#include "fontpreview.h"
 
 #include <QVBoxLayout>
 #include <QLabel>
+#include <QGuiApplication>
+#include <QScreen>
 
 static QList<FilePreview*> previewRegistry() {
     static QList<FilePreview*> registry = {
         new TextPreview(),
         new CanvasPreview(),
         new WorksheetPreview(),
+        new FontPreview(),
     };
     return registry;
 }
@@ -50,7 +54,23 @@ PreviewDlg::PreviewDlg(ccos_disk_t* disk, ccos_inode_t* file, QWidget* parent) :
     }
     layout->addWidget(content, 1);
 
-    resize(660, 540);
+    // A preview may ask for a roomier window than the default (e.g. the font
+    // preview's glyph table). Honour it, but never go below the default or the
+    // minimum, and never larger than ~85% of the screen so it stays usable.
+    QSize size(660, 540);
+    if (matched) {
+        const QSize want = matched->preferredDialogSize();
+        if (want.isValid() && !want.isEmpty()) {
+            size = size.expandedTo(want);
+        }
+    }
+    const QSize screen = QGuiApplication::primaryScreen()
+                              ? QGuiApplication::primaryScreen()->availableSize()
+                              : QSize();
+    if (screen.isValid()) {
+        size = size.boundedTo(QSize(screen.width() * 85 / 100, screen.height() * 85 / 100));
+    }
+    resize(size);
     setMinimumSize(360, 280);
     setSizeGripEnabled(true);
 }
