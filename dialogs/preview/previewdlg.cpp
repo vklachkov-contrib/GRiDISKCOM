@@ -18,7 +18,6 @@ static QList<FilePreview*> previewRegistry() {
 }
 
 PreviewDlg::PreviewDlg(ccos_disk_t* disk, ccos_inode_t* file, QWidget* parent) : QDialog(parent) {
-    setWindowTitle("File preview");
     setModal(true);
     setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint | Qt::WindowCloseButtonHint);
     setSizeGripEnabled(false);
@@ -28,6 +27,8 @@ PreviewDlg::PreviewDlg(ccos_disk_t* disk, ccos_inode_t* file, QWidget* parent) :
     char basename[CCOS_MAX_FILE_NAME] = {0};
     char type[CCOS_MAX_FILE_NAME] = {0};
     ccos_parse_file_name(file, basename, type, nullptr, nullptr);
+    setWindowTitle(QString("Preview %1~%2~ file")
+                       .arg(QString::fromLatin1(basename), QString::fromLatin1(type)));
     size_t fileSize = file->desc.file_size;
 
     FilePreview* matched = nullptr;
