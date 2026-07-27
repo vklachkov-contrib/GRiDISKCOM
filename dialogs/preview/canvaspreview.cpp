@@ -113,7 +113,7 @@ CanvasImage detectCanvas(const uint8_t* data, size_t size, uint32_t propLength) 
 QImage renderMono(const uint8_t* data, size_t dataLen, int w, int h, int bytesPerRow) {
     QImage img(w, h, QImage::Format_Mono);
     img.setColor(0, qRgb(0, 0, 0));
-    img.setColor(1, qRgb(255, 255, 255));
+    img.setColor(1, qRgb(0xFF, 0xEB, 0x00));
     img.fill(0);
 
     const int wordsPerRow = bytesPerRow / 2;
