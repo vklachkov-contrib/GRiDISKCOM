@@ -28,6 +28,26 @@ struct Worksheet {
     bool valid = false;
 };
 
+// Strip PCL escape sequences from raw bytes.
+QString stripPclEsc(const uint8_t* data, int size) {
+    QString out;
+    out.reserve(size);
+
+    int i = 0;
+    while (i < size) {
+        if (data[i] == 0x1B) {
+            i++;
+            while (i < size && !(data[i] >= 'A' && data[i] <= 'Z')) i++;
+            if (i < size) i++;  // consume the terminator
+        } else {
+            out += QLatin1Char(static_cast<char>(data[i]));
+            i++;
+        }
+    }
+
+    return out.trimmed();
+}
+
 // Parse worksheet content into rows of tab-separated cells in a single pass,
 // skipping over interleaved FE/FD OMF records (e.g. per-row formula byte-code).
 // CSV text is plain ASCII, so 0xFE/0xFD never appear inside a cell value.
@@ -80,8 +100,7 @@ Worksheet parseWorksheet(const uint8_t* data, size_t size, uint32_t propLength) 
 
     if (const OmfRecord* title = md.find(kOmfMetadataRecord, kTitleSubtype)) {
         // payload[0] = subtype 'h', payload[1..] = title text.
-        ws.title = QString::fromLatin1(
-            reinterpret_cast<const char*>(title->payload + 1), int(title->length - 1));
+        ws.title = stripPclEsc(title->payload + 1, int(title->length - 1));
     }
 
     // payload[0] = subtype 0x00, payload[1] = 1-based column index, rest = label.
