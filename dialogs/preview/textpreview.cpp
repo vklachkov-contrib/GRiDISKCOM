@@ -123,7 +123,7 @@ void WrapPreviewEdit::paintEvent(QPaintEvent* event) {
 
 bool TextPreview::supports(const QString& fileType, size_t fileSize) const {
     (void)fileSize;
-    for (const auto ext : {"text", "develop", "lst", "plm", "c", "basic"}) {
+    for (const auto ext : {"text", "develop", "lst", "plm", "c", "h", "basic", "task", "com", "asm"}) {
         if (fileType.compare(ext, Qt::CaseInsensitive) == 0) {
             return true;
         }
