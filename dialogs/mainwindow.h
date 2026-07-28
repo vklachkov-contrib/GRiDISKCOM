@@ -9,6 +9,7 @@
 #include <QInputDialog>
 #include <QMimeData>
 #include "ui_mainwindow.h"
+#include "filepanelwidget.h"
 #include "abdlg.h"
 #include "custdlg.h"
 #include "chsedlg.h"
@@ -25,6 +26,12 @@
 #include <optional>
 #include <vector>
 #include <ctime>
+#include <QHash>
+
+struct DirViewState {
+    int scroll = 0;
+    int selectIndex = -1;
+};
 
 struct MbrPartition {
     size_t   index;
@@ -51,6 +58,10 @@ struct DiskPanel {
     bool hdd_mode = false;
     std::shared_ptr<std::vector<uint8_t>> hdd_data;
     std::optional<int> hdd_partition;
+
+    // Keyed by the directory inode pointer, so going back into a previously
+    // visited directory (e.g. leaving a subfolder) restores selection + scroll.
+    QHash<quintptr, DirViewState> view_state;
 
     ~DiskPanel() {
         if (is_imd && !path.isEmpty()) {
@@ -91,9 +102,6 @@ public slots:
     void dropEvent(QDropEvent* event);
     void DebTrace();
     void Delete();
-    void OpenDir();
-    void FocusChanged(QWidget*, QWidget* now);
-    void ShowPreview(const QPoint& pos);
     void ShowPreview();
     void HDDMenu(bool activ);
     void Extract();
@@ -115,11 +123,19 @@ public:
     std::array<std::optional<DiskPanel>, 2> panels;
     int active_panel = 0;
 
-protected:
-    bool eventFilter(QObject* obj, QEvent* event) override;
-
 private:
     std::unique_ptr<Ui::MainWindow> ui;
+
+    // --- Panel helpers -----------------------------------------------------
+    FilePanelWidget* panelWidget(int panel_idx);
+    void onPanelActivated(int panel_idx);
+
+    // Signal handlers wired to both FilePanelWidgets.
+    void onFileDoubleClicked(int panel_idx, int fileIndex);
+    void onFileRightClicked(int panel_idx, int fileIndex, const QPoint& globalPos);
+    void onGoUpToParent(int panel_idx);
+    void onUrlsDropped(int panel_idx, const QStringList& files, const QStringList& dirs);
+    void onOpenRequested(int panel_idx);
 
     bool isFileAlreadyOpened(const QString& path);
     void handleAlreadyOpenedImg(QString path);
@@ -135,11 +151,17 @@ private:
 
     void fillTable(int panel_idx, ccos_inode_t* directory, bool noRoot);
 
+    void saveCurrentViewState(int panel_idx);
+    void applyViewState(int panel_idx, ccos_inode_t* directory);
+    void refreshPanel(int panel_idx);
+
     void updatePanelTitle(int panel_idx);
     void refreshActivePanelUI();
 
     bool goToParentDir(int panel_idx);
 
     void doPreview(int panel_idx, ccos_inode_t* file);
+
+    QVector<PanelFileEntry> buildFileEntries(int panel_idx, ccos_inode_t* directory);
 };
 #endif // MAINWINDOW_H

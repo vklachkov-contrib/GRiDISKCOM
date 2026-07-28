@@ -222,247 +222,12 @@
          <number>0</number>
         </property>
         <item>
-         <layout class="QVBoxLayout" name="verticalLayout_7">
-          <item>
-           <widget class="QGroupBox" name="groupBox">
-            <property name="font">
-             <font>
-              <pointsize>10</pointsize>
-              <bold>true</bold>
-              <underline>false</underline>
-             </font>
-            </property>
-            <property name="title">
-             <string>Disk I - No disk</string>
-            </property>
-            <layout class="QVBoxLayout" name="verticalLayout_2">
-             <item>
-              <widget class="QTableWidget" name="tableWidget">
-               <property name="font">
-                <font>
-                 <pointsize>9</pointsize>
-                 <bold>false</bold>
-                 <underline>false</underline>
-                 <kerning>true</kerning>
-                </font>
-               </property>
-               <property name="acceptDrops">
-                <bool>true</bool>
-               </property>
-               <property name="autoFillBackground">
-                <bool>true</bool>
-               </property>
-               <column>
-                <property name="text">
-                 <string>File name</string>
-                </property>
-                <property name="font">
-                 <font>
-                  <bold>true</bold>
-                 </font>
-                </property>
-               </column>
-               <column>
-                <property name="text">
-                 <string>File type</string>
-                </property>
-                <property name="font">
-                 <font>
-                  <bold>true</bold>
-                 </font>
-                </property>
-               </column>
-               <column>
-                <property name="text">
-                 <string>Size</string>
-                </property>
-                <property name="font">
-                 <font>
-                  <bold>true</bold>
-                 </font>
-                </property>
-               </column>
-               <column>
-                <property name="text">
-                 <string>Version</string>
-                </property>
-                <property name="font">
-                 <font>
-                  <bold>true</bold>
-                 </font>
-                </property>
-               </column>
-               <column>
-                <property name="text">
-                 <string>Created</string>
-                </property>
-                <property name="font">
-                 <font>
-                  <bold>true</bold>
-                 </font>
-                </property>
-               </column>
-               <column>
-                <property name="text">
-                 <string>Modificated</string>
-                </property>
-                <property name="font">
-                 <font>
-                  <bold>true</bold>
-                 </font>
-                </property>
-               </column>
-               <column>
-                <property name="text">
-                 <string>Expires</string>
-                </property>
-                <property name="font">
-                 <font>
-                  <bold>true</bold>
-                 </font>
-                </property>
-               </column>
-              </widget>
-             </item>
-            </layout>
-           </widget>
-          </item>
-         </layout>
+         <widget class="FilePanelWidget" name="panel1"/>
         </item>
         <item>
-         <layout class="QVBoxLayout" name="verticalLayout_8">
-          <item>
-           <widget class="QGroupBox" name="groupBox_2">
-            <property name="font">
-             <font>
-              <pointsize>10</pointsize>
-              <bold>false</bold>
-             </font>
-            </property>
-            <property name="title">
-             <string>Disk II - No disk</string>
-            </property>
-            <layout class="QVBoxLayout" name="verticalLayout">
-             <item>
-              <widget class="QTableWidget" name="tableWidget_2">
-               <property name="font">
-                <font>
-                 <pointsize>9</pointsize>
-                 <bold>false</bold>
-                </font>
-               </property>
-               <property name="acceptDrops">
-                <bool>true</bool>
-               </property>
-               <property name="autoFillBackground">
-                <bool>true</bool>
-               </property>
-               <column>
-                <property name="text">
-                 <string>File name</string>
-                </property>
-                <property name="font">
-                 <font>
-                  <bold>true</bold>
-                 </font>
-                </property>
-               </column>
-               <column>
-                <property name="text">
-                 <string>File type</string>
-                </property>
-                <property name="font">
-                 <font>
-                  <bold>true</bold>
-                 </font>
-                </property>
-               </column>
-               <column>
-                <property name="text">
-                 <string>Size</string>
-                </property>
-                <property name="font">
-                 <font>
-                  <bold>true</bold>
-                 </font>
-                </property>
-               </column>
-               <column>
-                <property name="text">
-                 <string>Version</string>
-                </property>
-                <property name="font">
-                 <font>
-                  <bold>true</bold>
-                 </font>
-                </property>
-               </column>
-               <column>
-                <property name="text">
-                 <string>Created</string>
-                </property>
-                <property name="font">
-                 <font>
-                  <bold>true</bold>
-                 </font>
-                </property>
-               </column>
-               <column>
-                <property name="text">
-                 <string>Modificated</string>
-                </property>
-                <property name="font">
-                 <font>
-                  <bold>true</bold>
-                 </font>
-                </property>
-               </column>
-               <column>
-                <property name="text">
-                 <string>Expires</string>
-                </property>
-                <property name="font">
-                 <font>
-                  <bold>true</bold>
-                 </font>
-                </property>
-               </column>
-              </widget>
-             </item>
-            </layout>
-           </widget>
-          </item>
-         </layout>
+         <widget class="FilePanelWidget" name="panel2"/>
         </item>
        </layout>
-      </item>
-     </layout>
-    </item>
-    <item>
-     <layout class="QHBoxLayout" name="horizontalLayout_3">
-      <item>
-       <widget class="QLabel" name="label">
-        <property name="font">
-         <font>
-          <pointsize>9</pointsize>
-         </font>
-        </property>
-        <property name="text">
-         <string>Free space:</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QLabel" name="label_2">
-        <property name="font">
-         <font>
-          <pointsize>9</pointsize>
-         </font>
-        </property>
-        <property name="text">
-         <string>Free space:</string>
-        </property>
-       </widget>
       </item>
      </layout>
     </item>
@@ -770,6 +535,13 @@
    </property>
   </action>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>FilePanelWidget</class>
+   <extends>QWidget</extends>
+   <header>dialogs/filepanelwidget.h</header>
+  </customwidget>
+ </customwidgets>
  <resources>
   <include location="../icon/icon.qrc"/>
  </resources>

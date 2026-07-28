@@ -71,45 +71,28 @@ QString ccosGetFileVersionQstr(ccos_inode_t* file){
                                    QString::number(ver.patch));
 }
 
-//*Convert date ("dd.MM.yyyy")
-QString ccosDateToQstr(ccos_date_t date){
-    QString day = QString::number(date.day);
-    QString month = QString::number(date.month);
-    QString year = QString::number(date.year);
-    while (day.size() < 2)
-        day = "0" + day;
-    while (month.size() < 2)
-        month = "0" + month;
-    while (year.size() < 4)
-        year = "0" + year;
-    return QString("%1.%2.%3").arg(day, month, year);
+//*Convert ccos_date_t to QDate
+static QDate ccosDateToQDate(ccos_date_t date){
+    return QDate(date.year, date.month, date.day);
 }
 
-//*Insert file row to the widget
-void addFile(QTableWidget* tableWidget, int mode){ //*For empty
-    QTableWidgetItem* rows[7];
-    tableWidget->insertRow(0);
-    for (int i = 0; i < 7; i++){
-        rows[i] = new QTableWidgetItem();
-        rows[i]->setFlags(rows[i]->flags() ^ Qt::ItemIsEditable);
-        tableWidget->setItem(0, i, rows[i]);
-    }
-    rows[0]->setText(mode == 1 ? "<EMPTY IMAGE>" : mode == 2 ? ".." : "<EMPTY>");
-    if (mode == 2)
-        rows[1]->setText("<PARENT-DIR>");
+//*Format a byte count as a human-readable "X MB (Y bytes)" string.
+static QString formatFreeSpace(size_t bytes) {
+    const double KB = 1024.0;
+    const double MB = 1024.0 * 1024.0;
+    const double GB = 1024.0 * 1024.0 * 1024.0;
+    QString human;
+    if (bytes >= GB)
+        human = QString::number(bytes / GB, 'f', 2) + " GB";
+    else if (bytes >= MB)
+        human = QString::number(bytes / MB, 'f', 2) + " MB";
+    else if (bytes >= KB)
+        human = QString::number(bytes / KB, 'f', 1) + " KB";
+    else
+        human = QString::number(bytes) + " B";
+    return QString("Free space: %1 (%2 bytes)").arg(human, QString::number(bytes));
 }
 
-void addFile(QTableWidget* tableWidget, QString text[]){ //*For normal
-    QTableWidgetItem* rows[7];
-    int row = tableWidget->rowCount();
-    tableWidget->insertRow(row);
-    for (int i = 0; i < 7; i++){
-        rows[i] = new QTableWidgetItem();
-        rows[i]->setFlags(rows[i]->flags() ^ Qt::ItemIsEditable);
-        rows[i]->setText(text[i]);
-        tableWidget->setItem(row, i, rows[i]);
-    }
-}
 
 //*Check if real file named as <Name>~<Type>~
 int tildaCheck(std::string parse_str){
@@ -133,7 +116,7 @@ int tildaCheck(std::string parse_str){
 
 //*Check if space is enough to add files
 int checkFreeSp(DiskPanel& from, DiskPanel& to,
-                QList<QTableWidgetItem *> calledElems,
+                const QVector<int>& fileIndices,
                 size_t* needs){ //*For copy
 
     size_t frsp = 0;
@@ -141,8 +124,8 @@ int checkFreeSp(DiskPanel& from, DiskPanel& to,
         return -2;
     }
     *needs = 0;
-    for (int i = 0; i < calledElems.size(); i+=7){
-        ccos_inode_t* file = from.inodes[calledElems[i]->row()];
+    for (int idx : fileIndices){
+        ccos_inode_t* file = from.inodes[idx];
         if (file != nullptr){
             if (ccos_is_dir(file)){
                 uint16_t fils = 0;
@@ -371,83 +354,114 @@ int validString(QString string, bool ifpath, QWidget* parent){
     return 0;
 }
 
-//*Get directory listing and fill it to table
-void MainWindow::fillTable(int panel_idx, ccos_inode_t* directory, bool noRoot) {
+// --- Panel helpers ----------------------------------------------------------
+
+FilePanelWidget* MainWindow::panelWidget(int panel_idx) {
+    return (panel_idx == 0) ? ui->panel1 : ui->panel2;
+}
+
+// Builds the UI-facing entry list for a directory and keeps panel.inodes in
+// sync (real files only, no nullptr sentinels).
+QVector<PanelFileEntry> MainWindow::buildFileEntries(int panel_idx, ccos_inode_t* directory) {
     auto& panel = *panels[panel_idx];
-    QTableWidget* tableWidget;
-    QLabel* label;
-    QGroupBox* box;
-    QString disk_name, msg;
     panel.inodes.clear();
+
     uint16_t fils = 0;
     ccos_inode_t** dirdata = nullptr;
     ccos_get_dir_contents(panel.disk, directory, &fils, &dirdata);
-    if (panel_idx == 0){
-        tableWidget = ui->tableWidget;
-        label = ui->label;
-        box = ui->groupBox;
-        disk_name = "I";
-    }
-    else{
-        tableWidget = ui->tableWidget_2;
-        label = ui->label_2;
-        box = ui->groupBox_2;
-        disk_name = "II";
-    }
-    for (int row = tableWidget->rowCount(); 0<=row; row--)
-        tableWidget->removeRow(row);
-    QString labd = short_string_to_qstring(ccos_get_disk_label(panel.disk));
-    msg = "Disk %1 - %2%3";
-    box->setTitle(msg.arg(disk_name, !labd.isEmpty() ? labd : "No label", panel.modified ? "*" : ""));
+
+    QVector<PanelFileEntry> entries;
+    entries.reserve(fils);
+
     char basename[CCOS_MAX_FILE_NAME];
     char type[CCOS_MAX_FILE_NAME];
-    if (noRoot){
-        addFile(tableWidget, 2);
-        panel.inodes.insert(panel.inodes.begin(), nullptr);
-    }
-    for(int c = 0; c < fils; c++){
+    for (int c = 0; c < fils; c++) {
         memset(basename, 0, CCOS_MAX_FILE_NAME);
         memset(type, 0, CCOS_MAX_FILE_NAME);
         ccos_parse_file_name(dirdata[c], basename, type, nullptr, nullptr);
-        QString qtype = type;
-        if (!noRoot) //All files in the root are directories
-            qtype = qtype + " <DIR>";
-        QString text[] = {basename, qtype, QString::number(dirdata[c]->desc.file_size),
-                         ccosGetFileVersionQstr(dirdata[c]),
-                         ccosDateToQstr(dirdata[c]->desc.creation_date),
-                         ccosDateToQstr(dirdata[c]->desc.mod_date),
-                         ccosDateToQstr(dirdata[c]->desc.expiration_date)};
+
+        PanelFileEntry entry;
+        entry.name = basename;
+        entry.type = type;
+        entry.size = dirdata[c]->desc.file_size;
+        entry.version = ccosGetFileVersionQstr(dirdata[c]);
+        entry.creationDate = ccosDateToQDate(dirdata[c]->desc.creation_date);
+        entry.modificationDate = ccosDateToQDate(dirdata[c]->desc.mod_date);
+        entry.expirationDate = ccosDateToQDate(dirdata[c]->desc.expiration_date);
+
         panel.inodes.push_back(dirdata[c]);
-        addFile(tableWidget, text);
-    }
-
-    size_t free_space = 0;
-    if (ccos_calc_free_space(panel.disk, &free_space) != CCOS_OK){
-        label->setText("Free space: FAILED TO CALCULATE!");
-        free(dirdata);
-        return;
-    }
-
-    msg = "Free space: %1 bytes.";
-    label->setText(msg.arg(free_space));
-    if (panel.inodes.empty()) {
-        addFile(tableWidget, 1);
-        panel.inodes.insert(panel.inodes.begin(), nullptr);
+        entries.append(std::move(entry));
     }
 
     free(dirdata);
+    return entries;
+}
+
+//*Get directory listing and push it to the panel widget
+void MainWindow::fillTable(int panel_idx, ccos_inode_t* directory, bool noRoot) {
+    auto& panel = *panels[panel_idx];
+    FilePanelWidget* pw = panelWidget(panel_idx);
+
+    pw->setDiskPresent(true);
+    auto entries = buildFileEntries(panel_idx, directory);
+    pw->setFiles(entries, panel.in_subdir);
+
+    updatePanelTitle(panel_idx);
+
+    size_t free_space = 0;
+    if (ccos_calc_free_space(panel.disk, &free_space) != CCOS_OK) {
+        pw->setStatusText("Free space: FAILED TO CALCULATE!");
+    } else {
+        pw->setStatusText(formatFreeSpace(free_space));
+    }
+
+    // Re-establish whatever view state we remembered for this directory
+    // (selection + scroll). For a brand-new directory there is none, and the
+    // widget falls back to the top row.
+    applyViewState(panel_idx, directory);
+}
+
+void MainWindow::saveCurrentViewState(int panel_idx) {
+    if (!panels[panel_idx] || panels[panel_idx]->current_dir == nullptr)
+        return;
+    auto& panel = *panels[panel_idx];
+    FilePanelWidget* pw = panelWidget(panel_idx);
+    DirViewState st;
+    st.scroll = pw->verticalScrollValue();
+    st.selectIndex = pw->currentFileIndex();
+    panel.view_state.insert(reinterpret_cast<quintptr>(panel.current_dir), st);
+}
+
+void MainWindow::applyViewState(int panel_idx, ccos_inode_t* directory) {
+    if (!panels[panel_idx] || directory == nullptr)
+        return;
+    auto& panel = *panels[panel_idx];
+    const quintptr key = reinterpret_cast<quintptr>(directory);
+    auto it = panel.view_state.constFind(key);
+    if (it != panel.view_state.constEnd())
+        panelWidget(panel_idx)->restoreSelection(it->selectIndex, it->scroll);
+    else
+        panelWidget(panel_idx)->restoreSelection(-1, -1);
+}
+
+void MainWindow::refreshPanel(int panel_idx) {
+    if (!panels[panel_idx])
+        return;
+    saveCurrentViewState(panel_idx);
+    auto& panel = *panels[panel_idx];
+    fillTable(panel_idx, panel.current_dir, panel.in_subdir);
 }
 
 void MainWindow::updatePanelTitle(int panel_idx) {
     if (!panels[panel_idx] || panels[panel_idx]->disk == nullptr)
         return;
     auto& panel = *panels[panel_idx];
-    QGroupBox* box = (panel_idx == 0) ? ui->groupBox : ui->groupBox_2;
     QString disk_name = (panel_idx == 0) ? "I" : "II";
     QString labd = short_string_to_qstring(ccos_get_disk_label(panel.disk));
-    box->setTitle(QString("Disk %1 - %2%3")
-                      .arg(disk_name, !labd.isEmpty() ? labd : "No label",
-                            panel.modified ? "*" : ""));
+    panelWidget(panel_idx)->setTitle(
+        QString("Disk %1 - %2%3").arg(disk_name,
+                                       !labd.isEmpty() ? labd : "No label",
+                                       panel.modified ? "*" : ""));
 }
 
 //*Parse Hard Disk MBR
@@ -506,31 +520,24 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(std::make_uniqu
     ui->setupUi(this);
 
     QMainWindow::setWindowTitle(QString("GRiDISK Commander v")+_PVER_);
-    for (auto* tw : {ui->tableWidget, ui->tableWidget_2}) {
-        tw->horizontalHeader()->resizeSection(0, 155);
-        tw->horizontalHeader()->resizeSection(2, 45);
-        tw->horizontalHeader()->resizeSection(3, 80);
-        tw->horizontalHeader()->resizeSection(4, 80);
-        tw->horizontalHeader()->resizeSection(5, 80);
-        tw->horizontalHeader()->resizeSection(6, 80);
-        addFile(tw, 0);
-        tw->verticalHeader()->hide();
-        tw->setSelectionBehavior(QAbstractItemView::SelectRows);
-        tw->setContextMenuPolicy(Qt::CustomContextMenu);
-        tw->installEventFilter(this);
-        connect(tw, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(ShowPreview(QPoint)));
+
+    // Each panel widget manages its own table, empty placeholder, context
+    // menu and keyboard handling; we just wire up the callbacks here.
+    FilePanelWidget* pws[2] = {ui->panel1, ui->panel2};
+    for (int i = 0; i < 2; ++i) {
+        FilePanelWidget* pw = pws[i];
+        pw->setFiles({}, false);
+        connect(pw, &FilePanelWidget::panelActivated, this, [this, i]() { onPanelActivated(i); });
+        connect(pw, &FilePanelWidget::fileDoubleClicked, this,
+                [this, i](int idx) { onFileDoubleClicked(i, idx); });
+        connect(pw, &FilePanelWidget::fileRightClicked, this,
+                [this, i](int idx, const QPoint& pos) { onFileRightClicked(i, idx, pos); });
+        connect(pw, &FilePanelWidget::goUpToParent, this, [this, i]() { onGoUpToParent(i); });
+        connect(pw, &FilePanelWidget::urlsDropped, this,
+                [this, i](const QStringList& files) { onUrlsDropped(i, files, {}); });
+        connect(pw, &FilePanelWidget::openRequested, this, [this, i]() { onOpenRequested(i); });
     }
-    QFont diskfont;
-    diskfont.setFamily(QString::fromUtf8("Arial"));
-    diskfont.setPointSize(9);
-    diskfont.setUnderline(false);
-    diskfont.setWeight(50);
-    diskfont.setBold(true);
-    ui->groupBox->setFont(diskfont);
-    ui->tableWidget->setFont(diskfont);
-    diskfont.setBold(false);
-    ui->groupBox_2->setFont(diskfont);
-    ui->tableWidget_2->setFont(diskfont);
+    refreshActivePanelUI();
 
     QStringList argv = QCoreApplication::arguments();
     int argc = argv.size();
@@ -589,10 +596,6 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(std::make_uniqu
     connect(ui->actionSave, SIGNAL(triggered()), this, SLOT(Save()));
     connect(ui->actionSave_as, SIGNAL(triggered()), this, SLOT(SaveAs()));
     connect(ui->actionSep_save, SIGNAL(triggered()), this, SLOT(SavePart()));
-    //  Cell activating connect
-    connect(ui->tableWidget, SIGNAL(cellActivated(int,int)), this, SLOT(OpenDir()));
-    connect(ui->tableWidget_2, SIGNAL(cellActivated(int,int)), this, SLOT(OpenDir()));
-
 }
 
 void MainWindow::AboutShow(){
@@ -647,7 +650,7 @@ void MainWindow::AddDirs(QStringList dirs){
     }
     if (!dirs.empty()){
         panel.modified = true;
-        fillTable(active_panel, panel.current_dir, panel.in_subdir);
+        refreshPanel(active_panel);
     }
 }
 
@@ -705,7 +708,7 @@ int MainWindow::AddFiles(QStringList files, ccos_inode_t* copyTo){
     }
     if (files.size() != 0){
         panel.modified = true;
-        fillTable(active_panel, panel.current_dir, panel.in_subdir);
+        refreshPanel(active_panel);
     }
     return 0;
 }
@@ -787,6 +790,7 @@ void MainWindow::AnotherPart(bool fromMenu){
     dst.disk = new_disk;
     dst.hdd_mode = true;
     dst.current_dir = root;
+    dst.view_state.clear();  // stale keys belong to the previous disk
     if (!fromMenu || dlg.isChecked()){
         dst.path = src.path;
         dst.hdd_data = src.hdd_data;
@@ -824,20 +828,11 @@ int MainWindow::CloseImg(){
     panels[active_panel].reset();
     HDDMenu(false);
 
-    QTableWidget* tableWidget;
-    if (active_panel == 0){
-        tableWidget = ui->tableWidget;
-        ui->label->setText("Free space:");
-        ui->groupBox->setTitle("Disk I - No disk");
-    }
-    else{
-        tableWidget = ui->tableWidget_2;
-        ui->label_2->setText("Free space:");
-        ui->groupBox_2->setTitle("Disk II - No disk");
-    }
-    for(int row = tableWidget->rowCount(); 0<=row; row--)
-        tableWidget-> removeRow(row);
-    addFile(tableWidget, 0);
+    FilePanelWidget* pw = panelWidget(active_panel);
+    pw->setDiskPresent(false);
+    pw->setFiles({}, false);
+    pw->setTitle({});
+    pw->setStatusText({});
     return 1;
 }
 
@@ -846,26 +841,18 @@ void MainWindow::Copy(){
     if (panels[active_panel] && panels[other]){
         auto& src = *panels[active_panel];
         auto& dst = *panels[other];
-        QTableWidget* tw;
-        if (active_panel == 0)
-            tw = ui->tableWidget;
-        else
-            tw = ui->tableWidget_2;
-        QList<QTableWidgetItem *> called = tw->selectedItems();
-        if (called.isEmpty())
+        QVector<int> selected = panelWidget(active_panel)->selectedFileIndices();
+        if (selected.isEmpty())
             return;
-        if (called.size() == 7 && src.inodes[called[0]->row()] == nullptr)
-            return;
-        bool selpar = (src.inodes[called[0]->row()] == nullptr) ? true : false;
         QMessageBox msgBox(this);
         msgBox.setIcon(QMessageBox::Question);
-        msgBox.setText(QString("Do you want to copy %1 file(s)?").arg((called.size()/7)-selpar));
+        msgBox.setText(QString("Do you want to copy %1 file(s)?").arg(selected.size()));
         msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
         msgBox.setDefaultButton(QMessageBox::No);
         if (msgBox.exec() != QMessageBox::Yes)
             return;
         size_t needs = 0;
-        int retop = checkFreeSp(src, dst, called, &needs);
+        int retop = checkFreeSp(src, dst, selected, &needs);
         if (retop == -2) {
             QMessageBox::critical(this, "Calculation error",
                             "Program can't calculate free space in the image!");
@@ -878,17 +865,16 @@ void MainWindow::Copy(){
                             QString("Requires %1 bytes of additional disk space to copy").arg(needs-frsp));
             return;
         }
-        for (int t = 0; t < called.size(); t+=7){
-            if (src.inodes[called[t]->row()]==nullptr)
-                continue;
-            if (ccos_is_dir(src.inodes[called[t]->row()])) {
+        for (int idx : selected){
+            ccos_inode_t* file = src.inodes[idx];
+            if (ccos_is_dir(file)) {
                 if (dst.current_dir->header.file_id != ccos_get_root_dir(dst.disk)->header.file_id) {
                     QMessageBox::critical(this, "Copying to non-root",
                                     "Folders can be copied only to root folder!");
                     return;
                 }
                 char newname[CCOS_MAX_FILE_NAME] = {};
-                ccos_parse_file_name(src.inodes[called[t]->row()], newname, nullptr, nullptr, nullptr);
+                ccos_parse_file_name(file, newname, nullptr, nullptr, nullptr);
                 ccos_inode_t* newdir = ccos_create_dir(dst.disk, ccos_get_root_dir(dst.disk), newname);
                 if (newdir == nullptr){
                             QMessageBox::critical(this, "Failed to create folder",
@@ -897,7 +883,7 @@ void MainWindow::Copy(){
                 }
                 uint16_t fils = 0;
                 ccos_inode_t** dirdata = nullptr;
-                ccos_get_dir_contents(src.disk, src.inodes[called[t]->row()], &fils, &dirdata);
+                ccos_get_dir_contents(src.disk, file, &fils, &dirdata);
                 for (int c = 0; c < fils; c++) {
                     ccos_copy_file(src.disk, dirdata[c], dst.disk, newdir);
                 }
@@ -908,13 +894,12 @@ void MainWindow::Copy(){
                                     "Files can be copied only to non-root folder!");
                     return;
                 }
-                ccos_copy_file(src.disk, src.inodes[called[t]->row()],
-                        dst.disk, dst.current_dir);
+                ccos_copy_file(src.disk, file, dst.disk, dst.current_dir);
             }
         }
         dst.modified = true;
-        fillTable(other, dst.current_dir, dst.in_subdir);
-        fillTable(active_panel, src.current_dir, src.in_subdir);
+        refreshPanel(other);
+        refreshPanel(active_panel);
     }
 }
 
@@ -925,23 +910,13 @@ void MainWindow::CopyLoc() {
 
     auto& panel = *panels[active_panel];
 
-    QTableWidget const* tw;
-    if (active_panel == 0)
-        tw = ui->tableWidget;
-    else
-        tw = ui->tableWidget_2;
-
-    QList<QTableWidgetItem *> called = tw->selectedItems();
-    if (called.isEmpty()) {
-        return;
-    }
-
-    if (called.size() == 7 && panel.inodes[called[0]->row()] == nullptr) {
+    QVector<int> selected = panelWidget(active_panel)->selectedFileIndices();
+    if (selected.isEmpty()) {
         return;
     }
 
     size_t needs = 0;
-    int retop = checkFreeSp(panel, panel, called, &needs);
+    int retop = checkFreeSp(panel, panel, selected, &needs);
     if (retop == -2) {
         QMessageBox::critical(this, "Calculation error",
                         "Program can't calculate free space in the image!");
@@ -975,8 +950,7 @@ void MainWindow::CopyLoc() {
         }
         dlg.exec();
 
-        ccos_inode_t* firfil = panel.inodes[called[0]->row()] == nullptr ?
-                    panel.inodes[called[6]->row()] : panel.inodes[called[0]->row()];
+        ccos_inode_t* firfil = panel.inodes[selected[0]];
 
         if (dirdata[dlg.getIndex()]->header.file_id == firfil->desc.dir_file_id){
             QMessageBox::critical(this, "Copy to parent dir",
@@ -984,20 +958,18 @@ void MainWindow::CopyLoc() {
             return;
         }
 
-        for (int t = 0; t < called.size(); t+=7){
-            if (panel.inodes[called[t]->row()]==nullptr)
-                continue;
-            ccos_copy_file(panel.disk, panel.inodes[called[t]->row()],
+        for (int idx : selected){
+            ccos_copy_file(panel.disk, panel.inodes[idx],
                     panel.disk, dirdata[dlg.getIndex()]);
         }
         panel.modified = true;
-        fillTable(active_panel, panel.current_dir, panel.in_subdir);
+        refreshPanel(active_panel);
     }
     else{
-        for (int t = 0; t < called.size(); t+=7){
+        for (int idx : selected){
             char basename[CCOS_MAX_FILE_NAME];
             memset(basename, 0, CCOS_MAX_FILE_NAME);
-            ccos_parse_file_name(panel.inodes[called[t]->row()], basename, nullptr, nullptr, nullptr);
+            ccos_parse_file_name(panel.inodes[idx], basename, nullptr, nullptr, nullptr);
 
             QString name;
             while (true){
@@ -1017,14 +989,14 @@ void MainWindow::CopyLoc() {
 
                     uint16_t fils = 0;
                     ccos_inode_t** dirdata = nullptr;
-                    ccos_get_dir_contents(panel.disk, panel.inodes[called[t]->row()], &fils, &dirdata);
+                    ccos_get_dir_contents(panel.disk, panel.inodes[idx], &fils, &dirdata);
 
                     for(int i = 0; i < fils; i++){
                         ccos_copy_file(panel.disk, dirdata[i],
                                 panel.disk, newdir);
                     }
                     panel.modified = true;
-                    fillTable(active_panel, panel.current_dir, panel.in_subdir);
+                    refreshPanel(active_panel);
                     break;
                 }
             }
@@ -1039,16 +1011,10 @@ void MainWindow::Date(){
 
     auto& panel = *panels[active_panel];
 
-    QTableWidget const* tw;
-    if (active_panel == 0)
-        tw = ui->tableWidget;
-    else
-        tw = ui->tableWidget_2;
-
-    ccos_inode_t* file = panel.inodes[tw->currentItem()->row()];
-    if (file == nullptr) {
+    int idx = panelWidget(active_panel)->currentFileIndex();
+    if (idx < 0)
         return;
-    }
+    ccos_inode_t* file = panel.inodes[idx];
 
     ccos_date_t cre = file->desc.creation_date;
     ccos_date_t mod = file->desc.mod_date;
@@ -1061,7 +1027,7 @@ void MainWindow::Date(){
         ccos_set_mod_date(panel.disk, file, mod);
         ccos_set_exp_date(panel.disk, file, exp);
         panel.modified = true;
-        fillTable(active_panel, panel.current_dir, panel.in_subdir);
+        refreshPanel(active_panel);
     }
 }
 
@@ -1079,31 +1045,21 @@ void MainWindow::DebTrace(){
 void MainWindow::Delete(){
     if (panels[active_panel]){
         auto& panel = *panels[active_panel];
-        QTableWidget* tw;
-        if (active_panel == 0)
-            tw = ui->tableWidget;
-        else
-            tw = ui->tableWidget_2;
-        QList<QTableWidgetItem *> called = tw->selectedItems();
-        if (called.size() == 0)
+        QVector<int> selected = panelWidget(active_panel)->selectedFileIndices();
+        if (selected.isEmpty())
             return;
-        if (called.size() == 7 && panel.inodes[called[0]->row()] == nullptr)
-            return;
-        bool selpar = (panel.inodes[called[0]->row()] == nullptr) ? true : false;
         QMessageBox msgBox(this);
         msgBox.setIcon(QMessageBox::Question);
-        msgBox.setText(QString("Do you want to delete %1 file(s)?").arg((called.size()/7)-selpar));
+        msgBox.setText(QString("Do you want to delete %1 file(s)?").arg(selected.size()));
         msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
         msgBox.setDefaultButton(QMessageBox::No);
         if (msgBox.exec() != QMessageBox::Yes)
             return;
-        for (int t = 0; t< called.size(); t+=7){
-            if (panel.inodes[called[t]->row()]==nullptr)
-                continue;
-            ccos_delete_file(panel.disk, panel.inodes[called[t]->row()]);
+        for (int idx : selected){
+            ccos_delete_file(panel.disk, panel.inodes[idx]);
         }
         panel.modified = true;
-        fillTable(active_panel, panel.current_dir, panel.in_subdir);
+        refreshPanel(active_panel);
     }
 }
 
@@ -1113,62 +1069,75 @@ void MainWindow::dragEnterEvent(QDragEnterEvent *event){
 }
 
 void MainWindow::dropEvent(QDropEvent* event){
-    QStringList FilesList;
-    QStringList DirsList;
-
+    // Fallback for drops that land on the window background rather than on
+    // a panel: route them to the active panel.
+    QStringList files, dirs;
     const QMimeData* mimeData = event->mimeData();
-    if (mimeData->hasUrls()){
-        QList<QUrl> urlList = mimeData->urls();
-        for (const auto& url : urlList) {
-            QString file = url.toLocalFile();
-            if (QFileInfo(file).isDir())
-                DirsList.append(file);
+    if (mimeData && mimeData->hasUrls()) {
+        for (const auto& url : mimeData->urls()) {
+            const QString path = url.toLocalFile();
+            if (path.isEmpty())
+                continue;
+            if (QFileInfo(path).isDir())
+                dirs.append(path);
             else
-                FilesList.append(file);
+                files.append(path);
         }
     }
+    if (!files.isEmpty() || !dirs.isEmpty())
+        onUrlsDropped(active_panel, files, dirs);
+    event->acceptProposedAction();
+}
+
+void MainWindow::onUrlsDropped(int panel_idx, const QStringList& FilesList, const QStringList& DirsList) {
+    // LoadImg / Add* / CloseImg all operate on the active panel, so redirect
+    // there before dispatching. This is always safe and makes sure an .img
+    // dropped onto an empty panel opens in that exact panel.
+    active_panel = panel_idx;
 
     if (FilesList.size() == 1 && DirsList.isEmpty()) {
         QString ext = QFileInfo(FilesList[0]).suffix().toLower();
         if (ext == "img" || ext == "imd") {
             LoadImg(FilesList[0]);
         }
-        else if (panels[active_panel] && panels[active_panel]->in_subdir) {
-            AddFiles(FilesList, panels[active_panel]->current_dir);
+        else if (panels[panel_idx] && panels[panel_idx]->in_subdir) {
+            AddFiles(FilesList, panels[panel_idx]->current_dir);
         }
     }
-    else if (panels[active_panel] && !panels[active_panel]->in_subdir) {
+    else if (panels[panel_idx] && !panels[panel_idx]->in_subdir) {
         AddDirs(DirsList);
     }
-    else if (panels[active_panel] && panels[active_panel]->in_subdir) {
-        AddFiles(FilesList, panels[active_panel]->current_dir);
+    else if (panels[panel_idx] && panels[panel_idx]->in_subdir) {
+        AddFiles(FilesList, panels[panel_idx]->current_dir);
     }
+
+    refreshActivePanelUI();
+}
+
+void MainWindow::onOpenRequested(int panel_idx) {
+    // The empty placeholder was clicked while no disk is loaded -- behave as
+    // if the user had pushed the "open" button for this specific panel.
+    active_panel = panel_idx;
+    refreshActivePanelUI();
+    OpenImg();
 }
 
 void MainWindow::Extract(){
     if (panels[active_panel]){
         auto& panel = *panels[active_panel];
-        QTableWidget* tw;
-        if (active_panel == 0)
-            tw = ui->tableWidget;
-        else
-            tw = ui->tableWidget_2;
-        QList<QTableWidgetItem *> called = tw->selectedItems();
-        if (called.size() == 0)
-            return;
-        if (called.size() == 7 && panel.inodes[called[0]->row()] == nullptr)
+        QVector<int> selected = panelWidget(active_panel)->selectedFileIndices();
+        if (selected.isEmpty())
             return;
         QString todir = QFileDialog::getExistingDirectory(this, tr("Extract to"), "",
             QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks | QFileDialog::DontUseNativeDialog);
         if (todir == "")
             return;
-        for (int t = 0; t < called.size(); t+=7){
-            if (panel.inodes[called[t]->row()]==nullptr)
-                continue;
-            if (ccos_is_dir(panel.inodes[called[t]->row()]))
-                dumpDirQt(panel.disk, panel.inodes[called[t]->row()], todir, this);
+        for (int idx : selected){
+            ccos_inode_t* file = panel.inodes[idx];
+            if (ccos_is_dir(file))
+                dumpDirQt(panel.disk, file, todir, this);
             else
-                dumpFileQt(panel.disk, panel.inodes[called[t]->row()], todir, this);
+                dumpFileQt(panel.disk, file, todir, this);
         }
     }
 }
@@ -1188,51 +1157,43 @@ void MainWindow::ExtractAll(){
 }
 
 void MainWindow::refreshActivePanelUI(){
-    QFont font = ui->groupBox->font();
-    font.setBold(active_panel == 0);
-    ui->groupBox->setFont(font);
-    ui->tableWidget->setFont(font);
-
-    font = ui->groupBox_2->font();
-    font.setBold(active_panel == 1);
-    ui->groupBox_2->setFont(font);
-    ui->tableWidget_2->setFont(font);
-
+    // Focus drives the active panel: setFocus() forwards to the table, whose
+    // FocusIn bolds the title and emits panelActivated (which in turn sets
+    // active_panel). HDDMenu still needs the logical active_panel here.
+    panelWidget(active_panel)->setFocus();
     HDDMenu(panels[active_panel] && panels[active_panel]->hdd_mode);
 }
 
-void MainWindow::FocusChanged(QWidget *, QWidget *now){
-    if (now == ui->tableWidget || now == ui->tableWidget_2){
-        active_panel = (now == ui->tableWidget_2) ? 1 : 0;
-        refreshActivePanelUI();
+void MainWindow::onPanelActivated(int panel_idx) {
+    active_panel = panel_idx;
+    refreshActivePanelUI();
+}
+
+void MainWindow::onGoUpToParent(int panel_idx) {
+    goToParentDir(panel_idx);
+}
+
+void MainWindow::onFileDoubleClicked(int panel_idx, int fileIndex) {
+    auto& panel = *panels[panel_idx];
+    ccos_inode_t* entry = panel.inodes[fileIndex];
+    if (ccos_is_dir(entry)) {
+        saveCurrentViewState(panel_idx);  // remember the root view for when we come back
+        panel.current_dir = entry;
+        panel.in_subdir = true;
+        fillTable(panel_idx, entry, panel.in_subdir);
+    } else {
+        doPreview(panel_idx, entry);
     }
+}
+
+void MainWindow::onFileRightClicked(int panel_idx, int fileIndex, const QPoint& /*globalPos*/) {
+    doPreview(panel_idx, panels[panel_idx]->inodes[fileIndex]);
 }
 
 void MainWindow::HDDMenu(bool enab){
     ui->actionAct_part->setEnabled(enab);
     ui->actionAno_part->setEnabled(enab);
     ui->actionSep_save->setEnabled(enab);
-}
-
-bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
-    if (event->type() != QEvent::KeyPress) {
-        return QMainWindow::eventFilter(obj, event);
-    }
-
-    const int panel_idx = (obj == ui->tableWidget_2) ? 1 : 0;
-
-    auto* keyEvent = static_cast<QKeyEvent*>(event);
-    switch (keyEvent->key()) {
-        case Qt::Key_Escape:
-        {
-            if (goToParentDir(panel_idx)) {
-                return true;
-            }
-            break;
-        }
-    }
-
-    return QMainWindow::eventFilter(obj, event);
 }
 
 void MainWindow::doPreview(int panel_idx, ccos_inode_t* file){
@@ -1244,34 +1205,14 @@ void MainWindow::doPreview(int panel_idx, ccos_inode_t* file){
     dlg.exec();
 }
 
-void MainWindow::ShowPreview(const QPoint& pos){
-    QTableWidget* tw = qobject_cast<QTableWidget*>(sender());
-    if (tw == nullptr)
-        return;
-    int panel_idx = (tw == ui->tableWidget_2) ? 1 : 0;
-    if (!panels[panel_idx])
-        return;
-    auto& panel = *panels[panel_idx];
-
-    QTableWidgetItem* it = tw->itemAt(pos);
-    if (it == nullptr)
-        return;
-    int row = it->row();
-    if (row < 0 || row >= static_cast<int>(panel.inodes.size()))
-        return;
-    doPreview(panel_idx, panel.inodes[row]);
-}
-
 void MainWindow::ShowPreview(){
     int panel_idx = active_panel;
     if (!panels[panel_idx])
         return;
-    auto& panel = *panels[panel_idx];
-    QTableWidget* tw = panel_idx ? ui->tableWidget_2 : ui->tableWidget;
-    int row = tw->currentRow();
-    if (row < 0 || row >= static_cast<int>(panel.inodes.size()))
+    int idx = panelWidget(panel_idx)->currentFileIndex();
+    if (idx < 0)
         return;
-    doPreview(panel_idx, panel.inodes[row]);
+    doPreview(panel_idx, panels[panel_idx]->inodes[idx]);
 }
 
 void MainWindow::Label(){
@@ -1291,7 +1232,7 @@ void MainWindow::Label(){
 
         ccos_set_disk_label(panel.disk, nameQ.toStdString().c_str());
         panel.modified = true;
-        fillTable(active_panel, panel.current_dir, panel.in_subdir);
+        refreshPanel(active_panel);
     }
 }
 
@@ -1612,7 +1553,7 @@ void MainWindow::MakeDir(){
                     break;
                 }
                 panel.modified = true;
-                fillTable(active_panel, root, panel.in_subdir);
+                refreshPanel(active_panel);
                 break;
             }
         }
@@ -1663,31 +1604,7 @@ void MainWindow::NewImage(){
     }
 }
 
-void MainWindow::OpenDir(){
-    if (panels[active_panel]){
-        auto& panel = *panels[active_panel];
-        QTableWidget* tw;
-        if (active_panel == 0)
-            tw = ui->tableWidget;
-        else
-            tw = ui->tableWidget_2;
-        QTableWidgetItem* called = tw->currentItem();
-        ccos_inode_t *dir = panel.inodes[called->row()];
-        if (dir == nullptr && !panel.in_subdir)
-            return;
-        if (called->row() == 0 && panel.in_subdir){
-            goToParentDir(active_panel);
-        }
-        else if (!panel.in_subdir){ //All files in the root are directories
-            panel.current_dir = dir;
-            panel.in_subdir = true;
-            fillTable(active_panel, dir, panel.in_subdir);
-        }
-        else if (!ccos_is_dir(dir)) {
-            doPreview(active_panel, dir);
-        }
-    }
-}
+
 
 bool MainWindow::goToParentDir(int panel_idx) {
     if (!panels[panel_idx]) {
@@ -1698,6 +1615,7 @@ bool MainWindow::goToParentDir(int panel_idx) {
         return false;  // already at the disk root, nothing above it
     }
     ccos_inode_t* root = ccos_get_root_dir(panel.disk);
+    saveCurrentViewState(panel_idx);  // remember the subfolder view before leaving
     panel.current_dir = ccos_get_parent_dir(panel.disk, panel.current_dir);
     if (panel.current_dir == root) {
         panel.in_subdir = false;
@@ -1716,22 +1634,12 @@ void MainWindow::OpenImg(){
 void MainWindow::Rename(){
     if (panels[active_panel]){
         auto& panel = *panels[active_panel];
-        QTableWidget* tw;
-        if (active_panel == 0)
-            tw = ui->tableWidget;
-        else
-            tw = ui->tableWidget_2;
-        QList<QTableWidgetItem *> called = tw->selectedItems();
-        if (called.empty())
-            return;
-        if (called.size() == 7 && panel.inodes[called[0]->row()] == nullptr)
+        QVector<int> selected = panelWidget(active_panel)->selectedFileIndices();
+        if (selected.isEmpty())
             return;
 
-        for (int i = 0; i < called.size(); i+=7){
-            ccos_inode_t* reninode = panel.inodes[called[i]->row()];
-            if (reninode == nullptr){
-                continue;
-            }
+        for (int idx : selected){
+            ccos_inode_t* reninode = panel.inodes[idx];
 
             char basename[CCOS_MAX_FILE_NAME];
             char type[CCOS_MAX_FILE_NAME];
@@ -1758,8 +1666,7 @@ void MainWindow::Rename(){
                         ccos_rename_file(panel.disk, reninode, newname.toStdString().c_str(),
                                          newtype.toStdString().c_str());
                         panel.modified = true;
-                        fillTable(active_panel, ccos_get_parent_dir(panel.disk, reninode),
-                                  panel.in_subdir);
+                        refreshPanel(active_panel);
                         break;
                     }
                 }
@@ -1905,30 +1812,29 @@ void MainWindow::SetActivePart() {
             mbrtab[(selctd-1)*16] = 0x80;
 
         panel.modified = true;
-        fillTable(active_panel, panel.current_dir, panel.in_subdir);
+        refreshPanel(active_panel);
     }
 }
 
 void MainWindow::Version(){
-    if (panels[active_panel]){
-        auto& panel = *panels[active_panel];
-        QTableWidget* tw;
-        if (active_panel == 0)
-            tw = ui->tableWidget;
-        else
-            tw = ui->tableWidget_2;
-        ccos_inode_t* file = panel.inodes[tw->currentItem()->row()];
-        if (file != nullptr){
-            ccos_version_t ver = ccos_get_file_version(file);
-            VerDlg dlg(this);
-            dlg.init(file->desc.name, ver);
-            if (dlg.exec() == 1){
-                ver = dlg.retVer();
-                ccos_set_file_version(panel.disk, file, ver);
-                panel.modified = true;
-                fillTable(active_panel, panel.current_dir, panel.in_subdir);
-            }
-        }
+    if (!panels[active_panel]) {
+        return;
+    }
+
+    auto& panel = *panels[active_panel];
+
+    int idx = panelWidget(active_panel)->currentFileIndex();
+    if (idx < 0) return;
+
+    ccos_inode_t* file = panel.inodes[idx];
+    ccos_version_t ver = ccos_get_file_version(file);
+    VerDlg dlg(this);
+    dlg.init(file->desc.name, ver);
+    if (dlg.exec() == 1){
+        ver = dlg.retVer();
+        ccos_set_file_version(panel.disk, file, ver);
+        panel.modified = true;
+        refreshPanel(active_panel);
     }
 }
 
