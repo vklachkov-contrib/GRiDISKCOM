@@ -4,10 +4,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_subdirectory(ccos_image)
 
-project(GRiDISKCOM LANGUAGES CXX)
+project(GRiDISKCOM LANGUAGES CXX C)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 include_directories(ccos_image)
+include_directories(imd2raw)
 
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
@@ -25,6 +26,8 @@ endif()
 
 add_executable(GRiDISKCOM ${GUI_TYPE}
         main.cpp
+        imd2raw/imd2raw.c
+        imd2raw/imd2raw.h
         dialogs/mainwindow.cpp
         dialogs/mainwindow.h
         dialogs/mainwindow.ui

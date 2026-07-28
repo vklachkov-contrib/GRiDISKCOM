@@ -1,5 +1,9 @@
 #include "mainwindow.h"
 #include "preview/previewdlg.h"
+#include "imd2raw.h"
+
+#include <QDir>
+#include <QTemporaryFile>
 
 #include <cstdio>
 #include <ctime>
@@ -240,6 +244,34 @@ int saveFileQt(QString path, uint8_t* file_data, size_t file_size, QWidget* pare
     }
 
     return 0;
+}
+
+//*Convert an .IMD file into a temporary raw .img and return its path.
+// Returns an empty string on failure (an error dialog is shown to the user).
+QString convertImdToTempImg(const QString& imdPath, QWidget* parent){
+    QTemporaryFile tempFile(QDir::tempPath() + "/gridiskcom_XXXXXX.img");
+    tempFile.setAutoRemove(false);
+    if (!tempFile.open()){
+        QMessageBox::critical(parent, "Unable to create temporary file",
+                        QString("Unable to create a temporary file for IMD conversion in \"%1\".")
+                            .arg(QDir::tempPath()));
+        return "";
+    }
+    QString tempPath = tempFile.fileName();
+    tempFile.close(); // release so imd2raw can open it for writing
+
+    QByteArray inBytes = imdPath.toLocal8Bit();
+    QByteArray outBytes = tempPath.toLocal8Bit();
+    int res = imd2raw_convert(inBytes.constData(), outBytes.constData());
+    if (res != 0){
+        QFile::remove(tempPath);
+        QMessageBox::critical(parent, "IMD conversion failed",
+                        QString("Failed to convert IMD file \"%1\" to a raw image (code %2).\n"
+                                "The file may be corrupted or not a valid ImageDisk image.")
+                            .arg(imdPath).arg(res));
+        return "";
+    }
+    return tempPath;
 }
 
 //*Dump file from image to path
@@ -514,7 +546,7 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(std::make_uniqu
             }
             else if (!panels[0] || !panels[1]){
                 QFileInfo fil(arg);
-                if (fil.suffix().toLower() == "img" && fil.exists()){
+                if ((fil.suffix().toLower() == "img" || fil.suffix().toLower() == "imd") && fil.exists()){
                     active_panel = panels[0] ? 1 : 0;
                     LoadImg(arg);
                 }
@@ -1098,7 +1130,7 @@ void MainWindow::dropEvent(QDropEvent* event){
 
     if (FilesList.size() == 1 && DirsList.isEmpty()) {
         QString ext = QFileInfo(FilesList[0]).suffix().toLower();
-        if (ext == "img") {
+        if (ext == "img" || ext == "imd") {
             LoadImg(FilesList[0]);
         }
         else if (panels[active_panel] && panels[active_panel]->in_subdir) {
@@ -1482,7 +1514,32 @@ void MainWindow::loadCustomImg(QString path, uint8_t* data, size_t size) {
     }
 }
 
+// IMD-aware entry point: if the file is an .IMD image, convert it to a
+// temporary raw .img first, run the standard opening pipeline, then mark
+// the resulting panel so that direct Save back to IMD is blocked.
 void MainWindow::LoadImg(QString path) {
+    if (path.isEmpty()) {
+        return;
+    }
+
+    bool fromImd = false;
+    if (QFileInfo(path).suffix().toLower() == "imd") {
+        QString tempImg = convertImdToTempImg(path, this);
+        if (tempImg.isEmpty()) {
+            return;
+        }
+        fromImd = true;
+        path = tempImg;
+    }
+
+    loadImgStandard(path);
+
+    if (fromImd && panels[active_panel] && panels[active_panel]->disk) {
+        panels[active_panel]->is_imd = true;
+    }
+}
+
+void MainWindow::loadImgStandard(QString path) {
     if (path.isEmpty()) {
         return;
     }
@@ -1651,7 +1708,7 @@ bool MainWindow::goToParentDir(int panel_idx) {
 
 void MainWindow::OpenImg(){
     QString path = QFileDialog::getOpenFileName(this, "Open Image", "",
-                                                 "GRiD image files (*.img);;"
+                                                 "GRiD image files (*.img *.imd);;"
                                                  "All files (*)");
     LoadImg(path);
 }
@@ -1718,6 +1775,14 @@ void MainWindow::Save(){
     if (!panels[active_panel] || panels[active_panel]->path == "")
         return SaveAs();
 
+    if (panels[active_panel]->is_imd) {
+        QMessageBox::warning(this, "Saving IMD is not supported",
+                        "This image was opened from an IMD file.\n"
+                        "Saving back to IMD format is not supported.\n\n"
+                        "Please use \"Save as\" to export the image as a .img file.");
+        return;
+    }
+
     auto& panel = *panels[active_panel];
     if (!panel.modified)
         return;
@@ -1763,7 +1828,16 @@ void MainWindow::SaveAs(){
                               QString("Unable to save file \"%1\". Please check the path.").arg(nameQ));
         return;
     }
-    panel.path = nameQ;
+    if (panel.is_imd){
+        // The old path pointed to a temporary converted image; drop it and
+        // turn this into a normal standalone .img from now on.
+        QString oldTemp = panel.path;
+        panel.path = nameQ;
+        QFile::remove(oldTemp);
+        panel.is_imd = false;
+    } else {
+        panel.path = nameQ;
+    }
     if (panel.modified){
         panel.modified = false;
         int other = !active_panel;

@@ -3,6 +3,7 @@
 
 #include <QMessageBox>
 #include <QFileDialog>
+#include <QFile>
 #include <QCloseEvent>
 #include <QKeyEvent>
 #include <QInputDialog>
@@ -41,11 +42,20 @@ struct DiskPanel {
     bool modified = false;
     bool in_subdir = false;
 
+    // True when the image was opened from an .IMD file. The actual on-disk
+    // file pointed to by `path` is then a temporary converted .img, which we
+    // own and clean up ourselves. IMD cannot be written back, so Save() is
+    // blocked and the user is redirected to Save As.
+    bool is_imd = false;
+
     bool hdd_mode = false;
     std::shared_ptr<std::vector<uint8_t>> hdd_data;
     std::optional<int> hdd_partition;
 
     ~DiskPanel() {
+        if (is_imd && !path.isEmpty()) {
+            QFile::remove(path); // remove the temporary converted image
+        }
         if (disk == nullptr)
             return;
         if (hdd_mode) {
@@ -118,6 +128,10 @@ private:
     void tryToOpenValidMbrDisk(QString path, uint8_t* data, size_t size);
     void openValidMbrPartition(QString path, std::vector<uint8_t> hdddata, int partition_index, ccos_disk_t* disk);
     void loadCustomImg(QString path, uint8_t* data, size_t size);
+
+    // Standard image opening pipeline (bootsector/size/MBR/custom detection).
+    // Used by LoadImg after optional IMD->img conversion.
+    void loadImgStandard(QString path);
 
     void fillTable(int panel_idx, ccos_inode_t* directory, bool noRoot);
 
