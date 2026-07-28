@@ -51,6 +51,8 @@ add_executable(GRiDISKCOM ${GUI_TYPE}
         dialogs/preview/fontpreview.h
         dialogs/preview/worksheetpreview.cpp
         dialogs/preview/worksheetpreview.h
+        dialogs/preview/databasepreview.cpp
+        dialogs/preview/databasepreview.h
         dialogs/preview/previewdlg.cpp
         dialogs/preview/previewdlg.h
         dialogs/rendlg.cpp

@@ -5,6 +5,7 @@
 #include "canvaspreview.h"
 #include "worksheetpreview.h"
 #include "fontpreview.h"
+#include "databasepreview.h"
 
 #include <QVBoxLayout>
 #include <QLabel>
@@ -17,6 +18,7 @@ static QList<FilePreview*> previewRegistry() {
         new CanvasPreview(),
         new WorksheetPreview(),
         new FontPreview(),
+        new DatabasePreview(),
     };
     return registry;
 }
