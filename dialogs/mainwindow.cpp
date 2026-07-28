@@ -1244,10 +1244,12 @@ void MainWindow::Label(){
         else
             dsk= "II";
         QString fname = short_string_to_qstring(ccos_get_disk_label(panel.disk));
+        bool ok = false;
         QString nameQ = QInputDialog::getText(this, tr("New label"),
-                                              QString("Set new label for the disk %1:").arg(dsk), QLineEdit::Normal, fname);
+                                              QString("Set new label for the disk %1:").arg(dsk),
+                                              QLineEdit::Normal, fname, &ok);
 
-        if (validString(nameQ, false, this) == -1)
+        if (!ok || validString(nameQ, false, this) == -1)
             return;
 
         ccos_set_disk_label(panel.disk, nameQ.toStdString().c_str());
