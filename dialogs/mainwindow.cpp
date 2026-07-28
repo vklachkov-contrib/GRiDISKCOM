@@ -419,6 +419,9 @@ void MainWindow::fillTable(int panel_idx, ccos_inode_t* directory, bool noRoot) 
     // (selection + scroll). For a brand-new directory there is none, and the
     // widget falls back to the top row.
     applyViewState(panel_idx, directory);
+
+    if (panel_idx == active_panel)
+        updateActionStates();
 }
 
 void MainWindow::saveCurrentViewState(int panel_idx) {
@@ -545,7 +548,7 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(std::make_uniqu
     if (argc > 1){
         for (int i = 1; i < argc; i++){
             QString arg = argv[i];
-            if (arg == "--trace") {
+            if (arg == "--debug") {
                 if (!ui->actionDebtrace->isChecked()){
                     ui->actionDebtrace->setChecked(true);
                     DebTrace();
@@ -1162,6 +1165,23 @@ void MainWindow::refreshActivePanelUI(){
     // active_panel). HDDMenu still needs the logical active_panel here.
     panelWidget(active_panel)->setFocus();
     HDDMenu(panels[active_panel] && panels[active_panel]->hdd_mode);
+    updateActionStates();
+}
+
+void MainWindow::updateActionStates() {
+    const bool has_panel = panels[active_panel].has_value();
+    const bool in_subdir = has_panel && panels[active_panel]->in_subdir;
+
+    // "Add Files" is only meaningful inside a directory; "Create Directory"
+    // only in the root. Both share the same shortcut and slot position, so
+    // toggling visibility makes the menu show exactly one of them.
+    ui->actionAdd->setVisible(has_panel && in_subdir);
+    ui->actionMake_dir->setVisible(has_panel && !in_subdir);
+
+    // Disk vs HDD-partition wording for the label action.
+    const bool hdd = has_panel && panels[active_panel]->hdd_mode;
+    ui->actionChange_label->setText(hdd ? tr("Change Partition Name...")
+                                         : tr("Change Disk Label..."));
 }
 
 void MainWindow::onPanelActivated(int panel_idx) {

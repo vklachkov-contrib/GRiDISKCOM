@@ -157,6 +157,7 @@ private:
 
     void updatePanelTitle(int panel_idx);
     void refreshActivePanelUI();
+    void updateActionStates();  // context-sensitive menu items (Add/MakeDir, label)
 
     bool goToParentDir(int panel_idx);
 
