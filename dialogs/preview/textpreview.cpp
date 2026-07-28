@@ -123,9 +123,12 @@ void WrapPreviewEdit::paintEvent(QPaintEvent* event) {
 
 bool TextPreview::supports(const QString& fileType, size_t fileSize) const {
     (void)fileSize;
-    return fileType.compare("text", Qt::CaseInsensitive) == 0 ||
-        fileType.compare("develop", Qt::CaseInsensitive) == 0 ||
-        fileType.compare("lst", Qt::CaseInsensitive) == 0;
+    for (const auto ext : {"text", "develop", "lst", "plm", "c", "basic"}) {
+        if (fileType.compare(ext, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 QWidget* TextPreview::createWidget(ccos_disk_t* disk, ccos_inode_t* file, QWidget* parent) {
