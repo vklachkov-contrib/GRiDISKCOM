@@ -22,8 +22,9 @@ struct PanelFileEntry {
     QDate expirationDate;
 };
 
-// Reusable file-list panel: a titled table (or an icon placeholder when empty)
-// plus a status line. Pure UI -- the host feeds entries and drives selection.
+// Reusable file-list panel: a titled table for loaded disks and a drive-icon
+// placeholder before an image is opened. Pure UI -- the host feeds entries and
+// drives selection.
 class FilePanelWidget : public QWidget {
     Q_OBJECT
 public:
@@ -34,9 +35,8 @@ public:
     void setTitle(const QString& title);
     // Hidden when empty. A non-empty value also implies "a disk is loaded".
     void setStatusText(const QString& text);
-    // Tells the panel whether a disk image is loaded, so the empty-state icon
-    // (folder vs drive) and the click-to-open behaviour are correct even for a
-    // disk whose root happens to have no files.
+    // Tells the panel whether a disk image is loaded, so an empty loaded disk
+    // still shows the file table while the unopened panel shows a drive icon.
     void setDiskPresent(bool present);
 
     // Per-directory view state, restored by the host after setFiles().

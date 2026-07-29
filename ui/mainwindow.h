@@ -12,6 +12,7 @@
 #include "filepanelwidget.h"
 #include "dialogs/about.h"
 #include "dialogs/customdisk.h"
+#include "dialogs/imagewizard.h"
 #include "dialogs/partition.h"
 #include "dialogs/date.h"
 #include "dialogs/rename.h"
@@ -140,6 +141,8 @@ private:
     // Standard image opening pipeline (bootsector/size/MBR/custom detection).
     // Used by LoadImg after optional IMD->img conversion.
     void loadImgStandard(QString path);
+    void createMonolithicImage(const ImageCreationWizard::Result& settings);
+    void createMbrImage(const ImageCreationWizard::Result& settings);
 
     void fillTable(int panel_idx, ccos_inode_t* directory, bool noRoot);
 

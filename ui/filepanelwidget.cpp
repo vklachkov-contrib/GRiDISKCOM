@@ -208,7 +208,7 @@ void FilePanelWidget::setFiles(const QVector<PanelFileEntry>& files, bool inSubd
 void FilePanelWidget::rebuildTable() {
     m_table->setRowCount(0);
 
-    if (m_files.isEmpty()) {
+    if (m_files.isEmpty() && !m_diskPresent) {
         m_stack->setCurrentWidget(m_emptyLabel);
         updateEmptyIcon();
         return;
@@ -278,10 +278,7 @@ void FilePanelWidget::setDiskPresent(bool present) {
 }
 
 void FilePanelWidget::updateEmptyIcon() {
-    // Folder icon when a disk is loaded (even if its root is empty), drive
-    // icon when no disk is present at all.
-    const QStyle::StandardPixmap sp = m_diskPresent ? QStyle::SP_DirIcon : QStyle::SP_DriveFDIcon;
-    const QIcon icon = QApplication::style()->standardIcon(sp);
+    const QIcon icon = QApplication::style()->standardIcon(QStyle::SP_DriveFDIcon);
     m_emptyLabel->setPixmap(icon.pixmap(64, 64));
 }
 

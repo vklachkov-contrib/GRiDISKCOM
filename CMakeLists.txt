@@ -47,6 +47,8 @@ add_executable(GRiDISKCOM ${GUI_TYPE}
         ui/dialogs/customdisk.cpp
         ui/dialogs/customdisk.h
         ui/dialogs/customdisk.ui
+        ui/dialogs/imagewizard.cpp
+        ui/dialogs/imagewizard.h
         ui/dialogs/date.cpp
         ui/dialogs/date.h
         ui/dialogs/date.ui

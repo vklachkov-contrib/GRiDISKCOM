@@ -1571,47 +1571,91 @@ void MainWindow::MakeDir(){
 }
 
 void MainWindow::NewImage(){
-    if (panels[active_panel])
-        if (!CloseImg()) return;
+    ImageCreationWizard wizard(this);
+    if (wizard.exec() != QDialog::Accepted) return;
 
-    CustomDiskDlg dlg(this);
+    const ImageCreationWizard::Result settings = wizard.result();
+    if (panels[active_panel] && !CloseImg()) return;
 
-    while (true){
-        if (dlg.exec() == 1) {
-            uint16_t sect, subl, isize;
-            QString labl;
-            dlg.GetParams(&sect, &subl, nullptr, &isize, &labl);
-
-            if (labl != "" && validString(labl, false, this) == -1) {
-                continue;
-            }
-
-            panels[active_panel].emplace();
-            auto& panel = *panels[active_panel];
-
-            disk_format_t format = sect == 256 ? CCOS_DISK_FORMAT_BUBMEM : CCOS_DISK_FORMAT_COMPASS;
-
-            if (ccos_new_disk_image(format, isize * 1024, &panel.disk) != 0) {
-                QMessageBox::critical(this, "Creation error",
-                                "Program can't create new image!");
-                panels[active_panel].reset();
-                return;
-            }
-
-            if (labl != "") {
-                ccos_set_disk_label(panel.disk, labl.toStdString().c_str());
-            }
-
-            panel.modified = true;
-            ccos_inode_t* root = ccos_get_root_dir(panel.disk);
-            panel.current_dir = root;
-            fillTable(active_panel, root, false);
-            break;
-        }
-        else{
-            break;
-        }
+    if (settings.kind == ImageCreationWizard::ImageKind::HardDisk && settings.useMbr) {
+        createMbrImage(settings);
+    } else {
+        createMonolithicImage(settings);
     }
+}
+
+void MainWindow::createMbrImage(const ImageCreationWizard::Result& settings) {
+    std::vector<std::vector<uint8_t>> partitions;
+    partitions.reserve(settings.partitionSizesMiB.size());
+    for (int index = 0; index < settings.partitionSizesMiB.size(); ++index) {
+        const size_t partitionBytes = size_t(settings.partitionSizesMiB[index]) * 1024 * 1024;
+        ccos_disk_t* partition = nullptr;
+        if (ccos_new_disk_image(CCOS_DISK_FORMAT_COMPASS, partitionBytes, &partition) != 0 || partition == nullptr) {
+            QMessageBox::critical(this, "Creation error", "Program can't create a new MBR partition!");
+            return;
+        }
+        if (!settings.partitionLabels.value(index).isEmpty()) {
+            ccos_set_disk_label(partition, settings.partitionLabels[index].toStdString().c_str());
+        }
+        partitions.emplace_back(ccos_disk_data(partition), ccos_disk_data(partition) + partitionBytes);
+        ccos_disk_free(partition);
+    }
+
+    std::optional<MbrImage> image = buildMbrImage(partitions);
+    if (!image.has_value()) {
+        QMessageBox::critical(this, "Creation error", "Program can't create a new MBR image!");
+        return;
+    }
+
+    auto hddData = std::make_shared<std::vector<uint8_t>>(std::move(image->data));
+    ccos_disk_t* disk = tryOpenMbrPartition(hddData->data(), image->firstPartition);
+    if (disk == nullptr) {
+        QMessageBox::critical(this, "Creation error", "Program can't open the newly created MBR partition!");
+        return;
+    }
+
+    panels[active_panel].emplace();
+    auto& panel = *panels[active_panel];
+    panel.disk = disk;
+    panel.hdd_mode = true;
+    panel.hdd_data = std::move(hddData);
+    panel.hdd_partition = 0;
+    panel.modified = true;
+    panel.current_dir = ccos_get_root_dir(disk);
+    fillTable(active_panel, panel.current_dir, false);
+    HDDMenu(true);
+}
+
+void MainWindow::createMonolithicImage(const ImageCreationWizard::Result& settings) {
+    disk_format_t format = CCOS_DISK_FORMAT_COMPASS;
+    size_t imageSize = 0;
+    if (settings.kind == ImageCreationWizard::ImageKind::Bubble) {
+        format = CCOS_DISK_FORMAT_BUBMEM;
+        imageSize = 384 * 1024;
+    } else if (settings.kind == ImageCreationWizard::ImageKind::Floppy) {
+        format = settings.floppyKind == ImageCreationWizard::FloppyKind::GridCase720K
+            ? CCOS_DISK_FORMAT_GRIDCASE : CCOS_DISK_FORMAT_COMPASS;
+        imageSize = settings.floppyKind == ImageCreationWizard::FloppyKind::GridCase720K
+            ? 720 * 1024 : 360 * 1024;
+    } else {
+        imageSize = size_t(settings.sizeMiB) * 1024 * 1024;
+    }
+
+    ccos_disk_t* disk = nullptr;
+    if (ccos_new_disk_image(format, imageSize, &disk) != 0 || disk == nullptr) {
+        QMessageBox::critical(this, "Creation error", "Program can't create new image!");
+        return;
+    }
+    if (!settings.label.isEmpty()) {
+        ccos_set_disk_label(disk, settings.label.toStdString().c_str());
+    }
+
+    panels[active_panel].emplace();
+    auto& panel = *panels[active_panel];
+    panel.disk = disk;
+    panel.modified = true;
+    panel.current_dir = ccos_get_root_dir(disk);
+    fillTable(active_panel, panel.current_dir, false);
 }
 
 
