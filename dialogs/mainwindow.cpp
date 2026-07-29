@@ -721,11 +721,8 @@ void MainWindow::AnPartMenu(){
 }
 
 void MainWindow::AnotherPart(bool fromMenu){
-    int usedisk;
-    if (fromMenu)
-        usedisk = active_panel;
-    else
-        usedisk = !active_panel;
+    const int panel_at_entry = active_panel;
+    const int usedisk = fromMenu ? panel_at_entry : !panel_at_entry;
 
     auto& src = *panels[usedisk];
 
@@ -752,7 +749,7 @@ void MainWindow::AnotherPart(bool fromMenu){
 
     int selctd = dlg.getIndex();
 
-    int topan = (fromMenu && dlg.isChecked()) ? !active_panel : active_panel;
+    const int topan = (fromMenu && dlg.isChecked()) ? !panel_at_entry : panel_at_entry;
 
     if (usedisk != topan && panels[topan]) {
         int saved_active = active_panel;
@@ -780,7 +777,7 @@ void MainWindow::AnotherPart(bool fromMenu){
             free(new_disk);
         if (fresh_target)
             panels[topan].reset();
-        if ((!panels[active_panel] || panels[active_panel]->disk == nullptr)
+        if ((!panels[panel_at_entry] || panels[panel_at_entry]->disk == nullptr)
             && panels[usedisk] && panels[usedisk]->disk != nullptr) {
             active_panel = usedisk;
         }
@@ -800,6 +797,7 @@ void MainWindow::AnotherPart(bool fromMenu){
     }
 
     fillTable(topan, root, false);
+    active_panel = topan;
     refreshActivePanelUI();
 }
 
@@ -1276,10 +1274,9 @@ void MainWindow::handleAlreadyOpenedImg(QString path) {
         return;
     }
 
-    if (!CloseImg()) {
-        return;
-    }
-
+    // AnotherPart(false) opens its own partition-selection dialog and closes
+    // the target panel only after the user confirms -- so cancelling the
+    // partition picker leaves everything untouched.
     AnotherPart(false);
 }
 
@@ -1416,6 +1413,10 @@ void MainWindow::tryToOpenValidMbrDisk(QString path, uint8_t* data, size_t size)
 
         ccos_disk_t* disk = tryOpenMbrPartition(hdd_data.data(), parts[selected]);
         if (disk) {
+            if (!CloseImg()) {
+                free(disk);
+                break;
+            }
             openValidMbrPartition(path, std::move(hdd_data), selected, disk);
             break;
         }
@@ -1468,6 +1469,11 @@ void MainWindow::loadCustomImg(QString path, uint8_t* data, size_t size) {
 
         ccos_disk_t* disk = tryOpenAs(data, size, sector_size, superblock, bitmap);
         if (disk) {
+            if (!CloseImg()) {
+                free(data);
+                free(disk);
+                return;
+            }
             openValidNonMbrDisk(path, disk);
             return;
         }
@@ -1507,15 +1513,18 @@ void MainWindow::loadImgStandard(QString path) {
         return;
     }
 
+    // Same image already open on this panel -- nothing to do.
+    if (panels[active_panel] && panels[active_panel]->path == path)
+        return;
+
+    // Same image open on the other panel.
     if (isFileAlreadyOpened(path)) {
         handleAlreadyOpenedImg(path);
         return;
     }
 
-    if (!CloseImg()) {
-        return;
-    }
-
+    // Read the file BEFORE closing the current image, so that a read error or
+    // a user-cancelled dialog leaves the existing disk intact.
     uint8_t* data;
     size_t size;
     if (readFileQt(path, &data, &size, this)) {
@@ -1523,22 +1532,27 @@ void MainWindow::loadImgStandard(QString path) {
     }
 
     ccos_disk_t* disk = tryFromBootsector(data, size);
+    if (!disk)
+        disk = tryDetectBySize(data, size);
     if (disk) {
-        openValidNonMbrDisk(path, disk);
-        return;
-    }
-
-    disk = tryDetectBySize(data, size);
-    if (disk) {
+        if (!CloseImg()) {
+            free(data);
+            free(disk);
+            return;
+        }
         openValidNonMbrDisk(path, disk);
         return;
     }
 
     if (isMbrDisk(data, size)) {
+        // tryToOpenValidMbrDisk takes ownership of data and calls CloseImg()
+        // itself, only after the user confirms a partition.
         tryToOpenValidMbrDisk(path, data, size);
         return;
     }
 
+    // loadCustomImg takes ownership of data and calls CloseImg() itself, only
+    // after the user successfully picks parameters.
     loadCustomImg(path, data, size);
 }
 
