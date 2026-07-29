@@ -76,7 +76,7 @@
         </font>
        </property>
        <property name="text">
-        <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p align=&quot;center&quot;&gt;&lt;span style=&quot; font-size:20pt; color:#000000;&quot;&gt;GRiDISK&lt;br/&gt;Commander&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+        <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p align=&quot;center&quot;&gt;&lt;span style=&quot; font-size:20pt;&quot;&gt;GRiDISK&lt;br/&gt;Commander&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
        </property>
       </widget>
      </item>
@@ -186,7 +186,7 @@
       </font>
      </property>
      <property name="text">
-      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;GRiDISK Commander&lt;/span&gt; - Simple double-panel file manager for GRiD disks, which is written on C++ and Qt. Based on BOOtak's &amp;quot;&lt;a href=&quot;https://github.com/BOOtak/CCOS-disk-utils&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;ccos_image&lt;/span&gt;&lt;/a&gt;&amp;quot; C library.&lt;/p&gt;&lt;p&gt;It can interact with content in disks, remove files and directories, adds new from other image or PC filesystem and dump files.&lt;/p&gt;&lt;p&gt;We know, that this program needs only for small number of users, but it will seriously simplify data exchange for GRiD Compass laptop and modern IBM-PC device.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;GRiDISK Commander is a dual-pane file manager for GRiD-OS disk images.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
      </property>
      <property name="wordWrap">
       <bool>true</bool>
@@ -234,7 +234,7 @@
       </font>
      </property>
      <property name="text">
-      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;a href=&quot;http://bs0dd.net&quot;&gt;&lt;span style=&quot; font-weight:700; text-decoration: underline; color:#2980b9;&quot;&gt;Bs(/)Dd&lt;/span&gt;&lt;/a&gt; - Commander coding, interface design, beginner in C++ and Qt&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;a href=&quot;http://bs0dd.net&quot;&gt;&lt;span style=&quot; font-weight:700; text-decoration: underline; color:#2980b9;&quot;&gt;Bs0dd&lt;/span&gt;&lt;/a&gt; — project founder&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
      </property>
     </widget>
    </item>
@@ -247,7 +247,7 @@
       </font>
      </property>
      <property name="text">
-      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;a href=&quot;https://www.youtube.com/@kogdazjasdohnu&quot;&gt;&lt;span style=&quot; font-weight:700; text-decoration: underline; color:#2980b9;&quot;&gt;BOOtak&lt;/span&gt;&lt;/a&gt; - ccos_image coding, first testing, owner of real GRiD Compass&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;a href=&quot;https://www.youtube.com/@kogdazjasdohnu&quot;&gt;&lt;span style=&quot; font-weight:700; text-decoration: underline; color:#2980b9;&quot;&gt;Bootak&lt;/span&gt;&lt;/a&gt; — author of the first GRiD-OS disk library&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
      </property>
     </widget>
    </item>
@@ -260,7 +260,7 @@
       </font>
      </property>
      <property name="text">
-      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;a href=&quot;https://github.com/vklachkov&quot;&gt;&lt;span style=&quot; font-weight:700; text-decoration: underline; color:#2980b9;&quot;&gt;Vklachkov&lt;/span&gt;&lt;/a&gt; - ccos_image improvement, bubble memory, another GRiD owner&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;a href=&quot;https://github.com/vklachkov&quot;&gt;&lt;span style=&quot; font-weight:700; text-decoration: underline; color:#2980b9;&quot;&gt;vklachkov&lt;/span&gt;&lt;/a&gt; — current project maintainer&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
      </property>
     </widget>
    </item>
