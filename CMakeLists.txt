@@ -34,9 +34,9 @@ add_executable(GRiDISKCOM ${GUI_TYPE}
         dialogs/abdlg.cpp
         dialogs/abdlg.h
         dialogs/abdlg.ui
-        dialogs/chsedlg.cpp
-        dialogs/chsedlg.h
-        dialogs/chsedlg.ui
+        dialogs/partitiondlg.cpp
+        dialogs/partitiondlg.h
+        dialogs/partitiondlg.ui
         dialogs/custdlg.cpp
         dialogs/custdlg.h
         dialogs/custdlg.ui

@@ -30,6 +30,7 @@
 //[Service functions]
 
 static ccos_disk_t* tryOpenMbrPartition(uint8_t* data, MbrPartition& partition);
+static QString mbrPartitionLabel(uint8_t* hdd_data, const MbrPartition& part);
 
 ccos_date_t ccos_get_datetime(void) {
   timespec tp;
@@ -467,7 +468,6 @@ void MainWindow::updatePanelTitle(int panel_idx) {
                                        panel.modified ? "*" : ""));
 }
 
-//*Parse Hard Disk MBR
 std::vector<MbrPartition> parseMbr(const uint8_t* data, size_t size) {
     std::vector<MbrPartition> partitions;
     partitions.reserve(4);
@@ -483,14 +483,11 @@ std::vector<MbrPartition> parseMbr(const uint8_t* data, size_t size) {
         bool isGRiD = entry[4] == 0x47;
         bool isActive = (entry[0] & 0x80) != 0;
 
-        if (!isGRiD) {
-            continue;
-        }
-
         uint64_t part_offset = (entry[8] | entry[9] << 8 | entry[10] << 16 | entry[11] << 24) * 512;
         uint64_t part_size = (entry[12] | entry[13] << 8 | entry[14] << 16 | entry[15] << 24) * 512;
 
-        if (part_offset == 0 && part_size == 0) {
+        // A zeroed entry marks the end of the used partition table.
+        if (part_offset == 0 && part_size == 0 && !isGRiD && !isActive) {
             break;
         }
 
@@ -728,28 +725,29 @@ void MainWindow::AnotherPart(bool fromMenu){
 
     std::vector<MbrPartition> parts = parseMbr(src.hdd_data->data(), src.hdd_data->size());
 
-    ChsDlg dlg(this);
-    dlg.setName("Select disk partition");
-    dlg.setInfo("Select the GRiD disk partition you want to work with:");
+    QStringList labels;
+    for (const auto& p : parts)
+        labels << mbrPartitionLabel(src.hdd_data->data(), p);
 
-    if (fromMenu)
-        dlg.enCheckBox();
-
-    for (const auto& part : parts) {
-        if (part.isActive){
-            dlg.addItem(QString("Partition %1, active").arg(part.index + 1));
-        } else {
-            dlg.addItem(QString("Partition %1").arg(part.index + 1));
-        }
+    QSet<int> alreadyOpen;
+    for (int i = 0; i < 2; ++i) {
+        if (panels[i] && panels[i]->hdd_mode && panels[i]->path == src.path &&
+            panels[i]->hdd_partition.has_value())
+            alreadyOpen.insert(panels[i]->hdd_partition.value());
     }
 
-    if (dlg.exec() != 1) {
+    PartitionDlg dlg(this);
+    dlg.setTitle("Select disk partition");
+    dlg.setInfo("Select the GRiD disk partition you want to work with:");
+    dlg.setPartitions(parts, labels, alreadyOpen);
+
+    if (dlg.exec() != QDialog::Accepted) {
         return;
     }
 
-    int selctd = dlg.getIndex();
+    int selctd = dlg.selectedIndex();
 
-    const int topan = (fromMenu && dlg.isChecked()) ? !panel_at_entry : panel_at_entry;
+    const int topan = panel_at_entry;
 
     if (usedisk != topan && panels[topan]) {
         int saved_active = active_panel;
@@ -791,7 +789,7 @@ void MainWindow::AnotherPart(bool fromMenu){
     dst.hdd_mode = true;
     dst.current_dir = root;
     dst.view_state.clear();  // stale keys belong to the previous disk
-    if (!fromMenu || dlg.isChecked()){
+    if (!fromMenu){
         dst.path = src.path;
         dst.hdd_data = src.hdd_data;
     }
@@ -932,28 +930,31 @@ void MainWindow::CopyLoc() {
     }
 
     if (panel.in_subdir){
-        ChsDlg dlg(this);
-        dlg.setName("Select the directory");
-        dlg.setInfo("Select the directory where the file(s) will be copied:");
-
         ccos_inode_t* root = ccos_get_root_dir(panel.disk);
 
         uint16_t fils = 0;
         ccos_inode_t** dirdata = nullptr;
         ccos_get_dir_contents(panel.disk, root, &fils, &dirdata);
 
-        char basename[CCOS_MAX_FILE_NAME];
-
-        for(int i = 0; i < fils; i++){
+        QStringList items;
+        for (int i = 0; i < fils; i++){
+            char basename[CCOS_MAX_FILE_NAME];
             memset(basename, 0, CCOS_MAX_FILE_NAME);
             ccos_parse_file_name(dirdata[i], basename, nullptr, nullptr, nullptr);
-            dlg.addItem(basename);
+            items << QString::fromLatin1(basename);
         }
-        dlg.exec();
 
+        bool ok = false;
+        QString chosen = QInputDialog::getItem(this, tr("Select the directory"),
+                                               tr("Select the directory where the file(s) will be copied:"),
+                                               items, 0, false, &ok);
+        if (!ok || chosen.isEmpty())
+            return;
+
+        int chosenIdx = items.indexOf(chosen);
         ccos_inode_t* firfil = panel.inodes[selected[0]];
 
-        if (dirdata[dlg.getIndex()]->header.file_id == firfil->desc.dir_file_id){
+        if (dirdata[chosenIdx]->header.file_id == firfil->desc.dir_file_id){
             QMessageBox::critical(this, "Copy to parent dir",
                                     "Can't copy files to it's parent dir!");
             return;
@@ -961,7 +962,7 @@ void MainWindow::CopyLoc() {
 
         for (int idx : selected){
             ccos_copy_file(panel.disk, panel.inodes[idx],
-                    panel.disk, dirdata[dlg.getIndex()]);
+                    panel.disk, dirdata[chosenIdx]);
         }
         panel.modified = true;
         refreshPanel(active_panel);
@@ -1371,6 +1372,20 @@ static ccos_disk_t* tryOpenMbrPartition(uint8_t* data, MbrPartition& partition) 
         GRID_HDD_SECTOR_SIZE, GRID_HDD_SUPERBLOCK_FID, GRID_HDD_BITMAP_FID);
 }
 
+static QString mbrPartitionLabel(uint8_t* hdd_data, const MbrPartition& part) {
+    if (!part.isGRiD) {
+        return {};
+    }
+    MbrPartition mut = part;
+    ccos_disk_t* disk = tryOpenMbrPartition(hdd_data, mut);
+    if (!disk) {
+        return {};
+    }
+    QString label = short_string_to_qstring(ccos_get_disk_label(disk));
+    free(disk);
+    return label;
+}
+
 void MainWindow::tryToOpenValidMbrDisk(QString path, uint8_t* data, size_t size) {
     Q_ASSERT(isMbrDisk(data, size));
 
@@ -1392,24 +1407,21 @@ void MainWindow::tryToOpenValidMbrDisk(QString path, uint8_t* data, size_t size)
         return;
     }
 
-    ChsDlg dlg(this);
-    dlg.setName("MBR: Select disk partition");
-    dlg.setInfo("Hard disk with MBR detected.\nSelect the GRiD disk partition you want to work with:");
+    QStringList labels;
+    for (const auto& p : parts)
+        labels << mbrPartitionLabel(hdd_data.data(), p);
 
-    for (const auto& part : parts) {
-        if (part.isActive){
-            dlg.addItem(QString("Partition %1, active").arg(part.index + 1));
-        } else {
-            dlg.addItem(QString("Partition %1").arg(part.index + 1));
-        }
-    }
+    PartitionDlg dlg(this);
+    dlg.setTitle("MBR: Select disk partition");
+    dlg.setInfo("Hard disk with MBR detected.\nSelect the GRiD disk partition you want to work with:");
+    dlg.setPartitions(parts, labels);
 
     while (true) {
-        if (dlg.exec() != 1) {
+        if (dlg.exec() != QDialog::Accepted) {
             break;
         }
 
-        int selected = dlg.getIndex();
+        int selected = dlg.selectedIndex();
 
         ccos_disk_t* disk = tryOpenMbrPartition(hdd_data.data(), parts[selected]);
         if (disk) {
@@ -1827,25 +1839,25 @@ void MainWindow::SetActivePart() {
 
     std::vector<MbrPartition> parts = parseMbr(panel.hdd_data->data(), panel.hdd_data->size());
 
-    ChsDlg dlg(this);
-    dlg.setName("Select disk partition");
+    QStringList labels;
+    for (const auto& p : parts)
+        labels << mbrPartitionLabel(panel.hdd_data->data(), p);
+
+    PartitionDlg dlg(this);
+    dlg.setTitle("Select disk partition");
     dlg.setInfo("Select the GRiD disk partition to make it active:");
+    dlg.allowNone("No active partition");
+    dlg.setPartitions(parts, labels);
 
-    dlg.addItem("No active partition");
-
-    for (const auto& part : parts) {
-        dlg.addItem(QString("Partition %1").arg(part.index + 1));
-    }
-
-    if (dlg.exec() == 1){
-        int selctd = dlg.getIndex();
+    if (dlg.exec() == QDialog::Accepted){
+        int idx = dlg.selectedIndex();
 
         mbrtab[0] = 0x0;
         mbrtab[16] = 0x0;
         mbrtab[32] = 0x0;
         mbrtab[48] = 0x0;
-        if (selctd > 0)
-            mbrtab[(selctd-1)*16] = 0x80;
+        if (idx >= 0)
+            mbrtab[parts[idx].index * 16] = 0x80;
 
         panel.modified = true;
         refreshPanel(active_panel);

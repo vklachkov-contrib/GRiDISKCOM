@@ -12,7 +12,7 @@
 #include "filepanelwidget.h"
 #include "abdlg.h"
 #include "custdlg.h"
-#include "chsedlg.h"
+#include "partitiondlg.h"
 #include "datedlg.h"
 #include "rendlg.h"
 #include "verdlg.h"
@@ -31,14 +31,6 @@
 struct DirViewState {
     int scroll = 0;
     int selectIndex = -1;
-};
-
-struct MbrPartition {
-    size_t   index;
-    bool     isGRiD;
-    bool     isActive;
-    uint64_t offset;
-    uint64_t size;
 };
 
 struct DiskPanel {
