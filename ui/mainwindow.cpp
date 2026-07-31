@@ -5,6 +5,7 @@
 #include "imd2raw.h"
 
 #include <QDir>
+#include <QRegularExpression>
 #include <QTemporaryFile>
 
 #include <cstdio>
@@ -15,6 +16,50 @@
 
 static ccos_disk_t* tryOpenMbrPartition(uint8_t* data, MbrPartition& partition);
 static QString mbrPartitionLabel(uint8_t* hdd_data, const MbrPartition& part);
+
+namespace {
+struct SearchQuery {
+    QStringList directoryPatterns;
+    QString filePattern;
+};
+
+SearchQuery parseSearchQuery(const QString& query) {
+    const QStringList parts = query.split('`', Qt::SkipEmptyParts);
+    if (parts.isEmpty())
+        return {};
+
+    SearchQuery result;
+    result.filePattern = parts.constLast();
+    result.directoryPatterns = parts.mid(0, parts.size() - 1);
+    return result;
+}
+
+bool wildcardMatches(const QString& value, const QString& pattern) {
+    if (!pattern.contains('*'))
+        return value.contains(pattern, Qt::CaseInsensitive);
+
+    QString expression = "^";
+    for (const QChar character : pattern) {
+        expression += character == '*' ? ".*" : QRegularExpression::escape(QString(character));
+    }
+    expression += '$';
+    return QRegularExpression(expression, QRegularExpression::CaseInsensitiveOption).match(value).hasMatch();
+}
+
+QString inodeBaseName(const ccos_inode_t* inode) {
+    char name[CCOS_MAX_FILE_NAME] = {};
+    if (ccos_parse_file_name(inode, name, nullptr, nullptr, nullptr) != CCOS_OK)
+        return {};
+    return QString::fromLatin1(name);
+}
+
+QString inodeType(const ccos_inode_t* inode) {
+    char type[CCOS_MAX_FILE_NAME] = {};
+    if (ccos_parse_file_name(inode, nullptr, type, nullptr, nullptr) != CCOS_OK)
+        return {};
+    return QString::fromLatin1(type);
+}
+}  // namespace
 
 ccos_date_t ccos_get_datetime(void) {
   timespec tp;
@@ -348,15 +393,12 @@ QVector<PanelFileEntry> MainWindow::buildFileEntries(int panel_idx, ccos_inode_t
     QVector<PanelFileEntry> entries;
     entries.reserve(fils);
 
-    char basename[CCOS_MAX_FILE_NAME];
-    char type[CCOS_MAX_FILE_NAME];
     for (int c = 0; c < fils; c++) {
-        memset(basename, 0, CCOS_MAX_FILE_NAME);
-        memset(type, 0, CCOS_MAX_FILE_NAME);
-        ccos_parse_file_name(dirdata[c], basename, type, nullptr, nullptr);
+        const QString name = inodeBaseName(dirdata[c]);
+        const QString type = inodeType(dirdata[c]);
 
         PanelFileEntry entry;
-        entry.name = basename;
+        entry.name = name;
         entry.type = type;
         entry.size = dirdata[c]->desc.file_size;
         entry.version = ccosGetFileVersionQstr(dirdata[c]);
@@ -372,6 +414,117 @@ QVector<PanelFileEntry> MainWindow::buildFileEntries(int panel_idx, ccos_inode_t
     return entries;
 }
 
+QVector<PanelFileEntry> MainWindow::buildSearchResults(int panel_idx, const QString& query) {
+    auto& panel = *panels[panel_idx];
+    panel.inodes.clear();
+
+    const SearchQuery search = parseSearchQuery(query);
+    if (search.filePattern.isEmpty())
+        return {};
+
+    struct SearchDirectory {
+        ccos_inode_t* inode;
+        QString path;
+    };
+
+    ccos_inode_t* root = ccos_get_root_dir(panel.disk);
+    if (root == nullptr)
+        return {};
+
+    QStringList currentPathParts;
+    ccos_inode_t* current = panel.current_dir;
+    while (current != nullptr && current->header.file_id != current->desc.dir_file_id) {
+        currentPathParts.prepend(inodeBaseName(current));
+        current = ccos_get_parent_dir(panel.disk, current);
+    }
+    const QString currentPath = currentPathParts.join('`');
+    const bool startsFromRoot = !search.directoryPatterns.isEmpty() &&
+                                search.directoryPatterns.constFirst() == "*";
+    QVector<SearchDirectory> directories {{startsFromRoot ? root : panel.current_dir,
+                                            startsFromRoot ? QString() : currentPath}};
+    auto appendSubdirectories = [&panel](const SearchDirectory& directory,
+                                         QVector<SearchDirectory>* children) {
+        uint16_t count = 0;
+        ccos_inode_t** entries = nullptr;
+        if (ccos_get_dir_contents(panel.disk, directory.inode, &count, &entries) != CCOS_OK)
+            return;
+
+        for (int index = 0; index < count; ++index) {
+            ccos_inode_t* entry = entries[index];
+            if (!ccos_is_dir(entry))
+                continue;
+            const QString name = inodeBaseName(entry);
+            if (!name.isEmpty()) {
+                children->append({entry, directory.path.isEmpty()
+                    ? name : directory.path + '`' + name});
+            }
+        }
+        free(entries);
+    };
+
+    for (const QString& pattern : search.directoryPatterns) {
+        QVector<SearchDirectory> next;
+        if (pattern == "*") {
+            // A wildcard path component searches every descendant directory,
+            // with the root included so root-level files are considered too.
+            next = directories;
+            for (int index = 0; index < next.size(); ++index) {
+                const SearchDirectory directory = next[index];
+                appendSubdirectories(directory, &next);
+            }
+        } else {
+            for (const SearchDirectory& directory : directories) {
+                QVector<SearchDirectory> children;
+                appendSubdirectories(directory, &children);
+                for (const SearchDirectory& child : children) {
+                    const QString name = child.path.section('`', -1);
+                    if (wildcardMatches(name, pattern))
+                        next.append(child);
+                }
+            }
+        }
+        directories = std::move(next);
+        if (directories.isEmpty())
+            return {};
+    }
+
+    QVector<PanelFileEntry> results;
+    for (const SearchDirectory& directory : directories) {
+        uint16_t count = 0;
+        ccos_inode_t** entries = nullptr;
+        if (ccos_get_dir_contents(panel.disk, directory.inode, &count, &entries) != CCOS_OK)
+            continue;
+
+        for (int index = 0; index < count; ++index) {
+            ccos_inode_t* entry = entries[index];
+            const QString name = inodeBaseName(entry);
+            const QString type = inodeType(entry);
+            const QString fullName = type.isEmpty() ? name : name + '~' + type + '~';
+            if (!wildcardMatches(fullName, search.filePattern))
+                continue;
+
+            PanelFileEntry result;
+            result.name = directory.path.isEmpty() ? name : directory.path + '`' + name;
+            result.type = type;
+            result.size = entry->desc.file_size;
+            result.version = ccosGetFileVersionQstr(entry);
+            result.creationDate = ccosDateToQDate(entry->desc.creation_date);
+            result.modificationDate = ccosDateToQDate(entry->desc.mod_date);
+            result.expirationDate = ccosDateToQDate(entry->desc.expiration_date);
+            panel.inodes.push_back(entry);
+            results.append(std::move(result));
+        }
+        free(entries);
+    }
+
+    return results;
+}
+
+void MainWindow::showSearchResults(int panel_idx) {
+    auto& panel = *panels[panel_idx];
+    panelWidget(panel_idx)->setFiles(buildSearchResults(panel_idx, panel.search_query), false);
+}
+
 //*Get directory listing and push it to the panel widget
 void MainWindow::fillTable(int panel_idx, ccos_inode_t* directory, bool noRoot) {
     auto& panel = *panels[panel_idx];
@@ -379,8 +532,12 @@ void MainWindow::fillTable(int panel_idx, ccos_inode_t* directory, bool noRoot) 
 
     pw->setDiskPresent(true);
     pw->setHddMode(panel.hdd_mode);
-    auto entries = buildFileEntries(panel_idx, directory);
-    pw->setFiles(entries, panel.in_subdir);
+    if (panel.search_query.isEmpty()) {
+        auto entries = buildFileEntries(panel_idx, directory);
+        pw->setFiles(entries, panel.in_subdir);
+    } else {
+        showSearchResults(panel_idx);
+    }
 
     updatePanelTitle(panel_idx);
 
@@ -428,7 +585,10 @@ void MainWindow::refreshPanel(int panel_idx) {
         return;
     saveCurrentViewState(panel_idx);
     auto& panel = *panels[panel_idx];
-    fillTable(panel_idx, panel.current_dir, panel.in_subdir);
+    if (panel.search_query.isEmpty())
+        fillTable(panel_idx, panel.current_dir, panel.in_subdir);
+    else
+        showSearchResults(panel_idx);
 }
 
 void MainWindow::updatePanelTitle(int panel_idx) {
@@ -1144,9 +1304,16 @@ void MainWindow::Search() {
 }
 
 void MainWindow::onSearchRequested(int panel_idx, const QString& query) {
-    fprintf(stderr, "Search query for panel %d: %s\n",
-            panel_idx, query.toLocal8Bit().constData());
-    fflush(stderr);
+    if (!panels[panel_idx])
+        return;
+
+    auto& panel = *panels[panel_idx];
+    panel.search_query = query;
+    if (query.isEmpty()) {
+        fillTable(panel_idx, panel.current_dir, panel.in_subdir);
+    } else {
+        showSearchResults(panel_idx);
+    }
 }
 
 void MainWindow::onPanelActivated(int panel_idx) {

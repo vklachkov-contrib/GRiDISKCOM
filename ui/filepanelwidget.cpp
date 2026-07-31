@@ -157,7 +157,13 @@ void FilePanelWidget::buildUi() {
         QRegularExpression(QStringLiteral("[\\x00-\\xFF]*")), m_searchField));
     m_searchHelpAction = m_searchField->addAction(
         themedSvgIcon(":/resources/help.svg", m_searchField->palette()), QLineEdit::TrailingPosition);
-    m_searchHelpAction->setToolTip("This is help text");
+    m_searchHelpAction->setToolTip(
+        "Search syntax:\n"
+        "Use ` to separate path components.\n"
+        "Use * as a wildcard; matching is case-insensitive.\n"
+        "Without *, text matches any part of a name or type.\n"
+        "Example: *~Font~ searches the current folder.\n"
+        "Example: `*`*~Font~ searches all folders from root.");
     m_searchHelpAction->setVisible(false);
     m_searchField->hide();
     boxLayout->addWidget(m_searchField);

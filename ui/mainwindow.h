@@ -50,6 +50,7 @@ struct DiskPanel {
 
     bool hdd_mode = false;
     std::shared_ptr<std::vector<uint8_t>> hdd_data;
+    QString search_query;
     std::optional<int> hdd_partition;
 
     // Keyed by the directory inode pointer, so going back into a previously
@@ -162,5 +163,7 @@ private:
     void doPreview(int panel_idx, ccos_inode_t* file);
 
     QVector<PanelFileEntry> buildFileEntries(int panel_idx, ccos_inode_t* directory);
+    QVector<PanelFileEntry> buildSearchResults(int panel_idx, const QString& query);
+    void showSearchResults(int panel_idx);
 };
 #endif // MAINWINDOW_H
