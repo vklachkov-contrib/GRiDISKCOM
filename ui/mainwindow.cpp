@@ -269,13 +269,17 @@ int dumpFileQt(ccos_disk_t* disk, ccos_inode_t* file, QString path, QWidget* par
 
 //*Dump dir from image to path
 int dumpDirQt(ccos_disk_t* disk, ccos_inode_t* dir, QString path, QWidget* parent){
-    char name[CCOS_MAX_FILE_NAME];
-    memset(name, 0, CCOS_MAX_FILE_NAME);
-    ccos_parse_file_name(dir, name, nullptr, nullptr, nullptr);
+    char name[CCOS_MAX_FILE_NAME] = {};
+    if (dir->header.file_id == dir->desc.dir_file_id) {
+        // A root directory is named by the disk label, without a file type.
+        const short_string_t* label = ccos_get_file_name(dir);
+        memcpy(name, label->data, label->length);
+    } else {
+        ccos_parse_file_name(dir, name, nullptr, nullptr, nullptr);
+    }
     replace_char_in_place(name, '/', '_');
 
     QString dpath = QDir(path).filePath(name);
-
     if (!QDir(dpath).exists() && !QDir().mkdir(dpath)){
             QMessageBox::critical(parent, "Failed to create directory",
                           QString("Failed to create directory \"%1\"!").arg(name));
@@ -306,26 +310,12 @@ int dumpImgQt(ccos_disk_t* disk, QString path, QString altname, QWidget* parent)
         return -1;
     }
 
-    QString name = short_string_to_qstring(ccos_get_file_name(root_dir));
-    QString dnam;
-
-    if (name.isEmpty()){
-        dnam = altname;
-    }
-    else{
-        dnam = name;
-        dnam.replace('/', '_');
+    if (ccos_get_file_name(root_dir)->length == 0) {
+        altname.replace('/', '_');
+        return dumpDirQt(disk, root_dir, QDir(path).filePath(altname), parent);
     }
 
-    QString dpath = QDir(path).filePath(dnam);
-
-    if (!QDir(dpath).exists() && !QDir().mkdir(dpath)){
-            QMessageBox::critical(parent, "Failed to create directory",
-                          QString("Failed to create directory \"%1\"!").arg(dnam));
-            return -1;
-    }
-
-    return dumpDirQt(disk, root_dir, dpath, parent);
+    return dumpDirQt(disk, root_dir, path, parent);
 }
 
 //*Check if string is valid for CCOS (does not contain unicode and reserved characters)
