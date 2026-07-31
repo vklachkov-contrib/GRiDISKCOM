@@ -42,6 +42,7 @@ add_executable(GRiDISKCOM ${GUI_TYPE}
         ui/mainwindow.ui
         ui/filepanelwidget.cpp
         ui/filepanelwidget.h
+        ui/themedicon.h
         ui/dialogs/about.cpp
         ui/dialogs/about.h
         ui/dialogs/about.ui
@@ -75,7 +76,7 @@ add_executable(GRiDISKCOM ${GUI_TYPE}
         ui/preview/worksheet.h
         ui/preview/database.cpp
         ui/preview/database.h
-        ui/icon/icon.qrc
+        ui/resources/icon.qrc
         execico.rc
         )
 

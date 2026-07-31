@@ -1,11 +1,10 @@
 #include "imagewizard.h"
+#include "themedicon.h"
 
 #include <QButtonGroup>
 #include <QFormLayout>
 #include <QFrame>
 #include <QIcon>
-#include <QPainter>
-#include <QPixmap>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -27,20 +26,7 @@ void configureWizardPage(QWizardPage* page) {
     page->setContentsMargins(0, 0, 0, 0);
 }
 
-QIcon plusIcon(const QPalette& palette) {
-    QPixmap pixmap(16, 16);
-    pixmap.fill(Qt::transparent);
 
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing);
-    QPen pen(palette.color(QPalette::ButtonText));
-    pen.setWidth(2);
-    pen.setCapStyle(Qt::RoundCap);
-    painter.setPen(pen);
-    painter.drawLine(8, 3, 8, 13);
-    painter.drawLine(3, 8, 13, 8);
-    return QIcon(pixmap);
-}
 
 void addPageHeader(QVBoxLayout* layout, const QString& title, const QString& description) {
     auto* titleLabel = new QLabel(title);
@@ -211,7 +197,7 @@ public:
 
         auto* actions = new QHBoxLayout;
         actions->addStretch();
-        m_addButton.setIcon(plusIcon(m_addButton.palette()));
+        m_addButton.setIcon(themedSvgIcon(":/resources/add.svg", m_addButton.palette()));
         m_addButton.setText("Add partition");
         m_addButton.setEnabled(m_table.rowCount() < kMaxPartitions);
         actions->addWidget(&m_addButton);

@@ -18,8 +18,8 @@
    <string>New image</string>
   </property>
   <property name="windowIcon">
-   <iconset resource="../icon/icon.qrc">
-    <normaloff>:/icon/gridsmall.png</normaloff>:/icon/gridsmall.png</iconset>
+   <iconset resource="../resources/icon.qrc">
+    <normaloff>:/resources/gridsmall.png</normaloff>:/resources/gridsmall.png</iconset>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
@@ -404,7 +404,7 @@
   </layout>
  </widget>
  <resources>
-  <include location="../icon/icon.qrc"/>
+  <include location="../resources/icon.qrc"/>
  </resources>
  <connections>
   <connection>
