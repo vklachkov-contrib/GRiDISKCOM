@@ -664,7 +664,17 @@ void MainWindow::AnPartMenu(){
 void MainWindow::AnotherPart(bool fromMenu){
     const int panel_at_entry = active_panel;
     const int usedisk = fromMenu ? panel_at_entry : !panel_at_entry;
+    openAnotherPartition(panel_at_entry, usedisk);
+}
 
+void MainWindow::openAnotherPartition(int targetPanel, int sourcePanel) {
+    if (!panels[sourcePanel] || !panels[sourcePanel]->hdd_mode ||
+        !panels[sourcePanel]->hdd_data) {
+        return;
+    }
+
+    const int panel_at_entry = targetPanel;
+    const int usedisk = sourcePanel;
     auto& src = *panels[usedisk];
 
     std::vector<MbrPartition> parts = parseMbr(src.hdd_data->data(), src.hdd_data->size());
@@ -734,7 +744,7 @@ void MainWindow::AnotherPart(bool fromMenu){
     dst.hdd_partition = int(parts[selctd].index);
     dst.current_dir = root;
     dst.view_state.clear();  // stale keys belong to the previous disk
-    if (!fromMenu){
+    if (usedisk != topan) {
         dst.path = src.path;
         dst.hdd_data = src.hdd_data;
     }
@@ -1218,10 +1228,11 @@ bool MainWindow::isFileAlreadyOpened(const QString& path) {
     return panels[other_panel] && panels[other_panel]->path == path;
 }
 
-void MainWindow::handleAlreadyOpenedImg(QString path) {
-    Q_ASSERT(isFileAlreadyOpened(path));
+void MainWindow::handleAlreadyOpenedImg(const QString& path, int targetPanel) {
+    const int sourcePanel = !targetPanel;
+    Q_ASSERT(panels[sourcePanel] && panels[sourcePanel]->path == path);
 
-    if (!panels[!active_panel]->hdd_mode) {
+    if (!panels[sourcePanel]->hdd_mode) {
         QMessageBox::critical(this, "Image already open",
                               "This image is already open in the other panel!");
         return;
@@ -1231,10 +1242,9 @@ void MainWindow::handleAlreadyOpenedImg(QString path) {
         return;
     }
 
-    // AnotherPart(false) opens its own partition-selection dialog and closes
-    // the target panel only after the user confirms -- so cancelling the
-    // partition picker leaves everything untouched.
-    AnotherPart(false);
+    // Modal dialogs can change focus, and therefore active_panel. Preserve the
+    // source and target selected before showing them.
+    openAnotherPartition(targetPanel, sourcePanel);
 }
 
 bool MainWindow::suggestSelectAnotherPartition() {
@@ -1477,13 +1487,16 @@ void MainWindow::loadImgStandard(QString path) {
         return;
     }
 
+    const int targetPanel = active_panel;
+
     // Same image already open on this panel -- nothing to do.
-    if (panels[active_panel] && panels[active_panel]->path == path)
+    if (panels[targetPanel] && panels[targetPanel]->path == path)
         return;
 
     // Same image open on the other panel.
-    if (isFileAlreadyOpened(path)) {
-        handleAlreadyOpenedImg(path);
+    const int otherPanel = !targetPanel;
+    if (panels[otherPanel] && panels[otherPanel]->path == path) {
+        handleAlreadyOpenedImg(path, targetPanel);
         return;
     }
 

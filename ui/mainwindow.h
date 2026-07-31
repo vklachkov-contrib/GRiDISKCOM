@@ -133,7 +133,8 @@ private:
     void onSearchRequested(int panel_idx, const QString& query);
 
     bool isFileAlreadyOpened(const QString& path);
-    void handleAlreadyOpenedImg(QString path);
+    void handleAlreadyOpenedImg(const QString& path, int targetPanel);
+    void openAnotherPartition(int targetPanel, int sourcePanel);
     bool suggestSelectAnotherPartition();
     void openValidNonMbrDisk(QString path, ccos_disk_t* disk);
     void tryToOpenValidMbrDisk(QString path, uint8_t* data, size_t size);
