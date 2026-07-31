@@ -32,6 +32,7 @@ add_executable(GRiDISKCOM ${GUI_TYPE}
         main.cpp
         common/imd2raw.c
         common/imd2raw.h
+        common/diskconstants.h
         common/mbr.cpp
         common/mbr.h
         common/omf_record.cpp

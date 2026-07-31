@@ -1,4 +1,5 @@
 #include "customdisk.h"
+#include "diskconstants.h"
 #include "ui_customdisk.h"
 
 CustomDiskDlg::CustomDiskDlg(QWidget *parent, bool openMode) :
@@ -18,9 +19,8 @@ CustomDiskDlg::CustomDiskDlg(QWidget *parent, bool openMode) :
     if (openMode) {
         ui->groupBox_3->setVisible(false);
         ui->groupBox_4->setVisible(false);
-        CustomDiskDlg::setWindowTitle("Custom image opening");
-        CustomDiskDlg::setMinimumHeight(380);
-        CustomDiskDlg::setMaximumHeight(380);
+        setWindowTitle("Open Custom Disk Image");
+        setFixedHeight(sizeHint().height());
     }
 }
 
@@ -53,10 +53,13 @@ void CustomDiskDlg::GetParams(uint16_t* sect, uint16_t* subl, uint16_t* bmp, uin
     *sect = ui->radioButton->isChecked() ? 512 : 256;
 
     if (ui->radioButton_3->isChecked()) {
-        *subl = 0x121;
+        *subl = GRID_FLOPPY_SUPERBLOCK_FID;
     }
     else if (ui->radioButton_4->isChecked()) {
-        *subl = 0x3FE;
+        *subl = GRID_BUBBLE_SUPERBLOCK_FID;
+    }
+    else if (ui->radioButton_13->isChecked()) {
+        *subl = GRID_HDD_SUPERBLOCK_FID;
     }
     else {
         *subl = ui->spinBox->value();
@@ -64,10 +67,13 @@ void CustomDiskDlg::GetParams(uint16_t* sect, uint16_t* subl, uint16_t* bmp, uin
 
     if (bmp != NULL) {
         if (ui->radioButton_10->isChecked()) {
-            *bmp = 0x120;
+            *bmp = GRID_FLOPPY_BITMAP_FID;
         }
         else if (ui->radioButton_11->isChecked()) {
-            *bmp = 0x3FD;
+            *bmp = GRID_BUBBLE_BITMAP_FID;
+        }
+        else if (ui->radioButton_14->isChecked()) {
+            *bmp = GRID_HDD_BITMAP_FID;
         }
         else {
             *bmp = ui->spinBox_3->value();
@@ -99,5 +105,3 @@ CustomDiskDlg::~CustomDiskDlg()
 {
     delete ui;
 }
-
-

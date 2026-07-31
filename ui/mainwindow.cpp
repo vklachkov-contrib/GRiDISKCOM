@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "preview/dialog.h"
+#include "diskconstants.h"
 #include "mbr.h"
 #include "imd2raw.h"
 
@@ -9,24 +10,6 @@
 #include <cstdio>
 #include <ctime>
 
-// GRiD disk/firmware "magic" constants for geometry/superblock/bitmap
-
-// Extracted from bubble image.
-#define GRID_BUBBLE_SECTOR_SIZE         256
-#define GRID_BUBBLE_SUPERBLOCK_FID      0x3FE
-#define GRID_BUBBLE_ALT_SUPERBLOCK_FID  0x121
-#define GRID_BUBBLE_BITMAP_FID          0x3FD
-#define GRID_BUBBLE_ALT_BITMAP_FID      0x120
-
-// Extracted from 2102 firmware.
-#define GRID_FLOPPY_SECTOR_SIZE     512
-#define GRID_FLOPPY_SUPERBLOCK_FID  0x121
-#define GRID_FLOPPY_BITMAP_FID      0x120
-
-// Extracted from 2101 firmware.
-#define GRID_HDD_SECTOR_SIZE        512
-#define GRID_HDD_SUPERBLOCK_FID     0x2420
-#define GRID_HDD_BITMAP_FID         0x2400
 
 //[Service functions]
 

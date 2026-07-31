@@ -64,25 +64,13 @@
      </widget>
     </widget>
    </item>
-   <item>
-    <spacer name="verticalSpacer">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>20</height>
-      </size>
-     </property>
-    </spacer>
-   </item>
+
    <item>
     <widget class="QGroupBox" name="groupBox_2">
      <property name="minimumSize">
       <size>
        <width>0</width>
-       <height>114</height>
+       <height>94</height>
       </size>
      </property>
      <property name="title">
@@ -91,7 +79,7 @@
      <widget class="QRadioButton" name="radioButton_4">
       <property name="geometry">
        <rect>
-        <x>200</x>
+        <x>20</x>
         <y>30</y>
         <width>141</width>
         <height>23</height>
@@ -104,7 +92,7 @@
      <widget class="QRadioButton" name="radioButton_5">
       <property name="geometry">
        <rect>
-        <x>120</x>
+        <x>200</x>
         <y>60</y>
         <width>41</width>
         <height>23</height>
@@ -117,48 +105,40 @@
      <widget class="QRadioButton" name="radioButton_3">
       <property name="geometry">
        <rect>
-        <x>20</x>
+        <x>200</x>
         <y>30</y>
         <width>151</width>
         <height>23</height>
        </rect>
       </property>
       <property name="text">
-       <string>0x121 (Floppy / HDD)</string>
+       <string>0x121 (Floppy)</string>
       </property>
       <property name="checked">
        <bool>true</bool>
       </property>
      </widget>
-     <widget class="QLabel" name="label">
+     <widget class="QRadioButton" name="radioButton_13">
       <property name="geometry">
        <rect>
-        <x>2</x>
-        <y>90</y>
-        <width>380</width>
-        <height>20</height>
+        <x>20</x>
+        <y>60</y>
+        <width>151</width>
+        <height>23</height>
        </rect>
       </property>
-      <property name="font">
-       <font>
-        <italic>true</italic>
-        <bold>false</bold>
-       </font>
-      </property>
       <property name="text">
-       <string>Supported superblock values: 0x0001 - 0xFFFF</string>
-      </property>
-      <property name="alignment">
-       <set>Qt::AlignCenter</set>
+       <string>0x2420 (HDD)</string>
       </property>
      </widget>
+
      <widget class="QSpinBox" name="spinBox">
       <property name="enabled">
        <bool>false</bool>
       </property>
       <property name="geometry">
        <rect>
-        <x>160</x>
+        <x>240</x>
         <y>58</y>
         <width>61</width>
         <height>26</height>
@@ -179,25 +159,13 @@
      </widget>
     </widget>
    </item>
-   <item>
-    <spacer name="verticalSpacer_5">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>20</height>
-      </size>
-     </property>
-    </spacer>
-   </item>
+
    <item>
     <widget class="QGroupBox" name="groupBox_5">
      <property name="minimumSize">
       <size>
        <width>0</width>
-       <height>114</height>
+       <height>94</height>
       </size>
      </property>
      <property name="title">
@@ -206,14 +174,14 @@
      <widget class="QRadioButton" name="radioButton_10">
       <property name="geometry">
        <rect>
-        <x>20</x>
+        <x>200</x>
         <y>30</y>
         <width>171</width>
         <height>23</height>
        </rect>
       </property>
       <property name="text">
-       <string>0x120 (Floppy / HDD)</string>
+       <string>0x120 (Floppy)</string>
       </property>
       <property name="checked">
        <bool>true</bool>
@@ -222,7 +190,7 @@
      <widget class="QRadioButton" name="radioButton_11">
       <property name="geometry">
        <rect>
-        <x>200</x>
+        <x>20</x>
         <y>30</y>
         <width>141</width>
         <height>23</height>
@@ -235,7 +203,7 @@
      <widget class="QRadioButton" name="radioButton_12">
       <property name="geometry">
        <rect>
-        <x>120</x>
+        <x>200</x>
         <y>60</y>
         <width>41</width>
         <height>23</height>
@@ -251,7 +219,7 @@
       </property>
       <property name="geometry">
        <rect>
-        <x>160</x>
+        <x>240</x>
         <y>58</y>
         <width>61</width>
         <height>26</height>
@@ -270,43 +238,23 @@
        <number>16</number>
       </property>
      </widget>
-     <widget class="QLabel" name="label_3">
+     <widget class="QRadioButton" name="radioButton_14">
       <property name="geometry">
        <rect>
-        <x>2</x>
-        <y>90</y>
-        <width>380</width>
-        <height>20</height>
+        <x>20</x>
+        <y>60</y>
+        <width>151</width>
+        <height>23</height>
        </rect>
       </property>
-      <property name="font">
-       <font>
-        <italic>true</italic>
-        <bold>false</bold>
-       </font>
-      </property>
       <property name="text">
-       <string>Supported bitmap values: 0x0001 - 0xFFFF</string>
-      </property>
-      <property name="alignment">
-       <set>Qt::AlignCenter</set>
+       <string>0x2400 (HDD)</string>
       </property>
      </widget>
+
     </widget>
    </item>
-   <item>
-    <spacer name="verticalSpacer_2">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>20</height>
-      </size>
-     </property>
-    </spacer>
-   </item>
+
    <item>
     <widget class="QGroupBox" name="groupBox_3">
      <property name="minimumSize">
@@ -418,19 +366,7 @@
      </widget>
     </widget>
    </item>
-   <item>
-    <spacer name="verticalSpacer_3">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>20</height>
-      </size>
-     </property>
-    </spacer>
-   </item>
+
    <item>
     <widget class="QGroupBox" name="groupBox_4">
      <property name="minimumSize">
@@ -454,19 +390,7 @@
      </widget>
     </widget>
    </item>
-   <item>
-    <spacer name="verticalSpacer_4">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>20</height>
-      </size>
-     </property>
-    </spacer>
-   </item>
+
    <item>
     <widget class="QDialogButtonBox" name="buttonBox">
      <property name="orientation">
