@@ -260,6 +260,7 @@
     <addaction name="actionCopy_locally"/>
     <addaction name="actionRename"/>
     <addaction name="actionDelete"/>
+    <addaction name="actionSearch"/>
     <addaction name="actionPreview"/>
     <addaction name="separator"/>
     <addaction name="actionAdd"/>
@@ -477,6 +478,14 @@
    </property>
    <property name="text">
     <string>Set Active Partition...</string>
+   </property>
+  </action>
+  <action name="actionSearch">
+   <property name="text">
+    <string>Search</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+F</string>
    </property>
   </action>
   <action name="actionNewImage">

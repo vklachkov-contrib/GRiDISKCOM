@@ -108,6 +108,7 @@ public slots:
     void Save();
     void SaveAs();
     void SavePart();
+    void Search();
     void SetActivePart();
     void Version();
 public:
@@ -129,6 +130,7 @@ private:
     void onGoUpToParent(int panel_idx);
     void onUrlsDropped(int panel_idx, const QStringList& files, const QStringList& dirs);
     void onOpenRequested(int panel_idx);
+    void onSearchRequested(int panel_idx, const QString& query);
 
     bool isFileAlreadyOpened(const QString& path);
     void handleAlreadyOpenedImg(QString path);

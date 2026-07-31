@@ -1,7 +1,9 @@
 #include "filepanelwidget.h"
+#include "themedicon.h"
 
 #include <algorithm>
 
+#include <QAction>
 #include <QApplication>
 #include <QColor>
 #include <QDragEnterEvent>
@@ -10,24 +12,30 @@
 #include <QDropEvent>
 #include <QFileInfo>
 #include <QFont>
+#include <QFontMetrics>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
 #include <QKeyEvent>
+#include <QLineEdit>
 #include <QLabel>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPixmap>
+#include <QRegularExpression>
+#include <QRegularExpressionValidator>
 #include <QResizeEvent>
 #include <QScrollBar>
+#include <QSignalBlocker>
 #include <QStackedWidget>
 #include <QStyledItemDelegate>
 #include <QStyle>
 #include <QStyleOptionViewItem>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QToolButton>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -50,6 +58,8 @@ const ColumnSpec kColumns[kColumnCount] = {
     {"Modified",    100},
     {"Expires",     100},
 };
+
+
 
 QString formatDate(const QDate& date) {
     // An unset date (e.g. ccos expiry) arrives as an invalid QDate -> blank cell.
@@ -113,7 +123,48 @@ void FilePanelWidget::buildUi() {
     titleFont.setPointSize(10);
     titleFont.setBold(false);
     m_groupBox->setFont(titleFont);
+    m_groupBox->setTitle({});
     auto* boxLayout = new QVBoxLayout(m_groupBox);
+    auto* titleLayout = new QHBoxLayout;
+    titleLayout->setContentsMargins(0, 0, 0, 0);
+    titleLayout->setSpacing(2);
+
+    m_titleLabel = new QLabel(m_groupBox);
+    m_titleLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    titleLayout->addWidget(m_titleLabel);
+
+    m_partitionButton = new QToolButton(m_groupBox);
+    m_partitionButton->setIcon(themedSvgIcon(":/resources/switch-partition.svg", m_partitionButton->palette()));
+    m_partitionButton->setToolTip("Switch disk partition");
+    m_partitionButton->setAccessibleName("Switch disk partition");
+    m_partitionButton->setVisible(false);
+    titleLayout->addWidget(m_partitionButton);
+
+    m_searchButton = new QToolButton(m_groupBox);
+    m_searchButton->setCheckable(true);
+    m_searchButton->setIcon(themedSvgIcon(":/resources/search.svg", m_searchButton->palette()));
+    m_searchButton->setStyleSheet(
+        "QToolButton:checked { border: 1px solid palette(highlight); border-radius: 3px; }");
+    m_searchButton->setToolTip("Search");
+    m_searchButton->setAccessibleName("Search");
+    m_searchButton->setVisible(false);
+    titleLayout->addWidget(m_searchButton);
+    boxLayout->addLayout(titleLayout);
+
+    m_searchField = new QLineEdit(m_groupBox);
+    m_searchField->setPlaceholderText("Search files");
+    m_searchField->setValidator(new QRegularExpressionValidator(
+        QRegularExpression(QStringLiteral("[\\x00-\\xFF]*")), m_searchField));
+    m_searchHelpAction = m_searchField->addAction(
+        themedSvgIcon(":/resources/help.svg", m_searchField->palette()), QLineEdit::TrailingPosition);
+    m_searchHelpAction->setToolTip("This is help text");
+    m_searchHelpAction->setVisible(false);
+    m_searchField->hide();
+    boxLayout->addWidget(m_searchField);
+
+    m_searchTimer = new QTimer(this);
+    m_searchTimer->setSingleShot(true);
+    m_searchTimer->setInterval(200);
 
     m_stack = new QStackedWidget(this);
     m_stack->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -182,6 +233,10 @@ void FilePanelWidget::buildUi() {
     m_dropOverlay->hide();
 
     connect(m_table, &QTableWidget::cellActivated, this, &FilePanelWidget::onCellActivated);
+    connect(m_partitionButton, &QToolButton::clicked, this, &FilePanelWidget::partitionSwitchRequested);
+    connect(m_searchButton, &QToolButton::toggled, this, &FilePanelWidget::onSearchToggled);
+    connect(m_searchField, &QLineEdit::textChanged, this, &FilePanelWidget::onSearchTextChanged);
+    connect(m_searchTimer, &QTimer::timeout, this, [this] { emit searchRequested(m_searchField->text()); });
     connect(m_table, &QTableWidget::customContextMenuRequested, this,
             &FilePanelWidget::onContextMenuRequested);
     m_table->installEventFilter(this);
@@ -263,7 +318,29 @@ int FilePanelWidget::verticalScrollValue() const {
 }
 
 void FilePanelWidget::setTitle(const QString& title) {
-    m_groupBox->setTitle(title);
+    m_titleText = title;
+    updateTitle();
+}
+
+void FilePanelWidget::setHddMode(bool enabled) {
+    m_partitionButton->setVisible(enabled);
+    updateTitle();
+}
+
+void FilePanelWidget::toggleSearch() {
+    if (m_diskPresent)
+        m_searchButton->toggle();
+}
+
+void FilePanelWidget::updateTitle() {
+    const QFontMetrics metrics(m_titleLabel->font());
+    int buttonsWidth = 0;
+    if (m_partitionButton->isVisible())
+        buttonsWidth += m_partitionButton->sizeHint().width();
+    if (m_searchButton->isVisible())
+        buttonsWidth += m_searchButton->sizeHint().width();
+    const int availableWidth = qMax(0, m_groupBox->contentsRect().width() - buttonsWidth - 16);
+    m_titleLabel->setText(metrics.elidedText(m_titleText, Qt::ElideRight, availableWidth));
 }
 
 void FilePanelWidget::setStatusText(const QString& text) {
@@ -273,6 +350,16 @@ void FilePanelWidget::setStatusText(const QString& text) {
 
 void FilePanelWidget::setDiskPresent(bool present) {
     m_diskPresent = present;
+    m_searchButton->setVisible(present);
+    if (!present) {
+        m_searchButton->setChecked(false);
+        const QSignalBlocker blocker(m_searchField);
+        m_searchField->clear();
+        m_searchTimer->stop();
+        m_searchField->hide();
+        m_searchHelpAction->setVisible(false);
+    }
+    updateTitle();
     if (m_files.isEmpty())
         updateEmptyIcon();
 }
@@ -282,13 +369,7 @@ void FilePanelWidget::updateEmptyIcon() {
     m_emptyLabel->setPixmap(icon.pixmap(64, 64));
 }
 
-void FilePanelWidget::setActiveTitle(bool active) {
-    QFont font = m_groupBox->font();
-    if (font.bold() == active)
-        return;
-    font.setBold(active);
-    m_groupBox->setFont(font);
-}
+
 
 int FilePanelWidget::visualRowToFileIndex(int row) const {
     return m_inSubdir ? row - 1 : row;
@@ -333,6 +414,22 @@ void FilePanelWidget::onCellActivated(int row, int /*column*/) {
     emit fileDoubleClicked(idx);
 }
 
+void FilePanelWidget::onSearchTextChanged(const QString& /*text*/) {
+    m_searchTimer->start();
+}
+
+void FilePanelWidget::onSearchToggled(bool visible) {
+    m_searchField->setVisible(visible);
+    m_searchHelpAction->setVisible(visible);
+    if (visible) {
+        m_searchField->setFocus();
+        emit searchRequested(m_searchField->text());
+    } else {
+        m_searchTimer->stop();
+        emit searchRequested({});  // Empty query tells the host to clear the filter.
+    }
+}
+
 void FilePanelWidget::onContextMenuRequested(const QPoint& pos) {
     QTableWidgetItem* item = m_table->itemAt(pos);
     if (item == nullptr)
@@ -355,10 +452,7 @@ bool FilePanelWidget::eventFilter(QObject* watched, QEvent* event) {
 
 bool FilePanelWidget::handleTableEvent(QEvent* event) {
     if (event->type() == QEvent::FocusIn) {
-        setActiveTitle(true);
         emit panelActivated();
-    } else if (event->type() == QEvent::FocusOut) {
-        setActiveTitle(false);
     } else if (event->type() == QEvent::KeyPress) {
         auto* keyEvent = static_cast<QKeyEvent*>(event);
         if (keyEvent->key() == Qt::Key_Escape && m_inSubdir) {
@@ -452,6 +546,7 @@ void FilePanelWidget::dropEvent(QDropEvent* event) {
 
 void FilePanelWidget::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
+    updateTitle();
     // The drop overlay is a layout-less child kept on top, so it has to be
     // pinned to the panel manually. This is the idiomatic Qt pattern for a
     // widget that must cover its parent without influencing its geometry.

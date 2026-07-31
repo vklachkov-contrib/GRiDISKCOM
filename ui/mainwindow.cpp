@@ -388,6 +388,7 @@ void MainWindow::fillTable(int panel_idx, ccos_inode_t* directory, bool noRoot) 
     FilePanelWidget* pw = panelWidget(panel_idx);
 
     pw->setDiskPresent(true);
+    pw->setHddMode(panel.hdd_mode);
     auto entries = buildFileEntries(panel_idx, directory);
     pw->setFiles(entries, panel.in_subdir);
 
@@ -485,6 +486,9 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(std::make_uniqu
         connect(pw, &FilePanelWidget::urlsDropped, this,
                 [this, i](const QStringList& files) { onUrlsDropped(i, files, {}); });
         connect(pw, &FilePanelWidget::openRequested, this, [this, i]() { onOpenRequested(i); });
+        connect(pw, &FilePanelWidget::partitionSwitchRequested, this, &MainWindow::AnPartMenu);
+        connect(pw, &FilePanelWidget::searchRequested, this,
+                [this, i](const QString& query) { onSearchRequested(i, query); });
     }
     refreshActivePanelUI();
 
@@ -544,6 +548,7 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(std::make_uniqu
     connect(ui->actionRename, SIGNAL(triggered()), this, SLOT(Rename()));
     connect(ui->actionSave, SIGNAL(triggered()), this, SLOT(Save()));
     connect(ui->actionSave_as, SIGNAL(triggered()), this, SLOT(SaveAs()));
+    connect(ui->actionSearch, SIGNAL(triggered()), this, SLOT(Search()));
     connect(ui->actionSep_save, SIGNAL(triggered()), this, SLOT(SavePart()));
 }
 
@@ -736,6 +741,7 @@ void MainWindow::AnotherPart(bool fromMenu){
         free(dst.disk);
     dst.disk = new_disk;
     dst.hdd_mode = true;
+    dst.hdd_partition = int(parts[selctd].index);
     dst.current_dir = root;
     dst.view_state.clear();  // stale keys belong to the previous disk
     if (!fromMenu){
@@ -778,6 +784,7 @@ int MainWindow::CloseImg(){
 
     FilePanelWidget* pw = panelWidget(active_panel);
     pw->setDiskPresent(false);
+    pw->setHddMode(false);
     pw->setFiles({}, false);
     pw->setTitle({});
     pw->setStatusText({});
@@ -1130,6 +1137,16 @@ void MainWindow::updateActionStates() {
     const bool hdd = has_panel && panels[active_panel]->hdd_mode;
     ui->actionChange_label->setText(hdd ? tr("Change Partition Name...")
                                          : tr("Change Disk Label..."));
+}
+
+void MainWindow::Search() {
+    panelWidget(active_panel)->toggleSearch();
+}
+
+void MainWindow::onSearchRequested(int panel_idx, const QString& query) {
+    fprintf(stderr, "Search query for panel %d: %s\n",
+            panel_idx, query.toLocal8Bit().constData());
+    fflush(stderr);
 }
 
 void MainWindow::onPanelActivated(int panel_idx) {

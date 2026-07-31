@@ -8,7 +8,11 @@
 
 class QGroupBox;
 class QLabel;
+class QLineEdit;
+class QAction;
 class QStackedWidget;
+class QTimer;
+class QToolButton;
 class QTableWidget;
 class RowHoverDelegate;
 
@@ -38,6 +42,8 @@ public:
     // Tells the panel whether a disk image is loaded, so an empty loaded disk
     // still shows the file table while the unopened panel shows a drive icon.
     void setDiskPresent(bool present);
+    void setHddMode(bool enabled);
+    void toggleSearch();
 
     // Per-directory view state, restored by the host after setFiles().
     int verticalScrollValue() const;
@@ -53,6 +59,8 @@ signals:
     void panelActivated();   // table gained focus
     void urlsDropped(const QStringList& files);  // folders are ignored
     void openRequested();    // click on empty placeholder while no disk is loaded
+    void partitionSwitchRequested();
+    void searchRequested(const QString& query);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -65,14 +73,17 @@ protected:
 private slots:
     void onCellActivated(int row, int column);
     void onContextMenuRequested(const QPoint& pos);
+    void onSearchTextChanged(const QString& text);
+    void onSearchToggled(bool visible);
 
 private:
     void buildUi();
     void rebuildTable();
     void updateEmptyIcon();
+    void updateTitle();
     void setDragOver(bool on);
     void setHoverRow(int row);
-    void setActiveTitle(bool active);  // toggle the title bold (focus-driven)
+
     int visualRowToFileIndex(int row) const;  // table row -> m_files index (-1 for "..")
 
     // eventFilter dispatchers, one per watched object.
@@ -81,6 +92,12 @@ private:
     bool handleEmptyLabelEvent(QEvent* event);
 
     QGroupBox* m_groupBox = nullptr;
+    QLabel* m_titleLabel = nullptr;
+    QToolButton* m_partitionButton = nullptr;
+    QToolButton* m_searchButton = nullptr;
+    QLineEdit* m_searchField = nullptr;
+    QAction* m_searchHelpAction = nullptr;
+    QTimer* m_searchTimer = nullptr;
     QStackedWidget* m_stack = nullptr;
     QTableWidget* m_table = nullptr;
     QLabel* m_emptyLabel = nullptr;
@@ -93,6 +110,7 @@ private:
     bool m_diskPresent = false;
     bool m_dragOver = false;
     int m_hoverRow = -1;
+    QString m_titleText;
 };
 
 #endif // FILEPANELWIDGET_H
